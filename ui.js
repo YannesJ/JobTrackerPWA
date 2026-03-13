@@ -1,0 +1,371 @@
+/*
+ * Copyright 2024 Job Application Tracker Contributors
+ * Licensed under the Apache License, Version 2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
+ */
+
+'use strict';
+
+// ─── Chart instances ──────────────────────────────────────────────────────────
+const Charts = {};
+
+function isDark() {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+function chartColors() {
+  return {
+    grid:   isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+    text:   isDark() ? '#55556a' : '#9898b2',
+    font:   "'Outfit', sans-serif",
+  };
+}
+function destroyChart(id) { if (Charts[id]) { Charts[id].destroy(); delete Charts[id]; } }
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const apps = State.all;
+  const total      = apps.length;
+  const interviews = apps.filter(a => a.status === 'Interview').length;
+  const zusagen    = apps.filter(a => a.status === 'Zusage').length;
+  const offene     = apps.filter(a => a.status === 'Offen').length;
+  const successRate = total ? Math.round((zusagen / total) * 100) : 0;
+
+  const responseTimes = apps
+    .filter(a => a.history?.length > 1)
+    .map(a => {
+      const t0 = new Date(a.history[0].timestamp);
+      const t1 = new Date(a.history[1].timestamp);
+      return Math.max(0, Math.round((t1 - t0) / 86400000));
+    });
+  const avgResponse = responseTimes.length
+    ? Math.round(responseTimes.reduce((a,b)=>a+b,0) / responseTimes.length)
+    : null;
+
+  // KPI Cards
+  document.getElementById('kpi-grid').innerHTML = [
+    { label:'Gesamt',     value: total,                        sub: `${offene} offen`,            icon:'file-text',  color:'#6366f1', bg:'rgba(99,102,241,.1)' },
+    { label:'Erfolg',     value: successRate+'%',              sub: `${zusagen} Zusage(n)`,        icon:'trending-up', color:'#22c55e', bg:'rgba(34,197,94,.1)'  },
+    { label:'Interviews', value: interviews,                   sub: 'aktive Gespräche',            icon:'users',      color:'#f59e0b', bg:'rgba(245,158,11,.1)' },
+    { label:'Ø Antwort',  value: avgResponse !== null ? avgResponse+'d' : '–', sub:'bis 1. Statuswechsel', icon:'clock', color:'#ec4899', bg:'rgba(236,72,153,.1)' },
+  ].map(k => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background:${k.bg}">
+        <i data-lucide="${k.icon}" style="width:15px;height:15px;color:${k.color}"></i>
+      </div>
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`).join('');
+
+  // Salary stats
+  const salaries = apps.map(a => a.expectedSalary).filter(Boolean);
+  const avgSalary = salaries.length ? Math.round(salaries.reduce((a,b)=>a+b,0)/salaries.length) : null;
+  const minSalary = salaries.length ? Math.min(...salaries) : null;
+  const maxSalary = salaries.length ? Math.max(...salaries) : null;
+
+  document.getElementById('salary-grid').innerHTML = [
+    { label:'Ø Gehalt',  value: fmtEuro(avgSalary) },
+    { label:'Min – Max', value: salaries.length ? `${fmtEuro(minSalary)} – ${fmtEuro(maxSalary)}` : '–' },
+    { label:'Top Gehalt',value: fmtEuro(maxSalary) },
+  ].map(s => `
+    <div class="salary-card">
+      <div class="salary-label">${s.label}</div>
+      <div class="salary-value">${s.value}</div>
+    </div>`).join('');
+
+  lucide.createIcons();
+  renderCharts();
+}
+
+function renderCharts() {
+  const c = chartColors();
+  const apps = State.all;
+
+  // ── Weekly Bar Chart ──────────────────────────────────────────────────────
+  const weekKeys = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i * 7);
+    weekKeys.push(getWeekKey(d.toISOString()));
+  }
+  const weekCounts = Object.fromEntries(weekKeys.map(k => [k, 0]));
+  apps.forEach(a => {
+    const k = getWeekKey(a.applicationDate);
+    if (k in weekCounts) weekCounts[k]++;
+  });
+  const weekLabels = weekKeys.map(k => 'KW' + k.split('-W')[1]);
+  const weekData   = weekKeys.map(k => weekCounts[k]);
+
+  destroyChart('weekly');
+  const wCtx = document.getElementById('chart-weekly')?.getContext('2d');
+  if (wCtx) {
+    const grad = wCtx.createLinearGradient(0, 0, 0, 180);
+    grad.addColorStop(0,   isDark() ? 'rgba(99,102,241,.7)' : 'rgba(99,102,241,.8)');
+    grad.addColorStop(1,   isDark() ? 'rgba(99,102,241,.2)' : 'rgba(99,102,241,.3)');
+    Charts.weekly = new Chart(wCtx, {
+      type: 'bar',
+      data: { labels: weekLabels, datasets: [{ data: weekData, backgroundColor: grad, borderRadius: 5, borderSkipped: false }] },
+      options: baseBarOpts(c),
+    });
+  }
+
+  // ── Rejection Pie ─────────────────────────────────────────────────────────
+  const rejMap = {};
+  apps.filter(a => a.status === 'Absage').forEach(a => {
+    const r = a.rejectionReason?.trim() || 'Kein Grund';
+    rejMap[r] = (rejMap[r]||0) + 1;
+  });
+  const pieWrap = document.getElementById('chart-rejection-wrap');
+  destroyChart('rejection');
+  if (!Object.keys(rejMap).length) {
+    if (pieWrap) pieWrap.innerHTML = `<p style="font-size:.82rem;color:var(--text-muted);text-align:center;padding-top:3rem">Keine Absagen vorhanden</p>`;
+  } else {
+    if (pieWrap) pieWrap.innerHTML = `<canvas id="chart-rejection"></canvas>`;
+    const pCtx = document.getElementById('chart-rejection')?.getContext('2d');
+    if (pCtx) {
+      const palette = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#6366f1','#84cc16'];
+      Charts.rejection = new Chart(pCtx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(rejMap),
+          datasets: [{
+            data: Object.values(rejMap),
+            backgroundColor: palette.slice(0, Object.keys(rejMap).length),
+            borderWidth: 2,
+            borderColor: isDark() ? '#111118' : '#ffffff',
+            hoverOffset: 6,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: c.text, font: { family: c.font, size: 11 }, boxWidth: 11, padding: 9 }
+            },
+            tooltip: tooltipStyle(),
+          },
+        },
+      });
+    }
+  }
+
+  // ── Source Grouped Bar ────────────────────────────────────────────────────
+  const srcMap = {};
+  apps.forEach(a => {
+    const s = a.source || 'Unbekannt';
+    if (!srcMap[s]) srcMap[s] = { interview:0, zusage:0 };
+    if (a.status === 'Interview') srcMap[s].interview++;
+    if (a.status === 'Zusage')    srcMap[s].zusage++;
+  });
+  const srcLabels   = Object.keys(srcMap);
+  destroyChart('source');
+  const sCtx = document.getElementById('chart-source')?.getContext('2d');
+  if (sCtx) {
+    if (!srcLabels.length) {
+      sCtx.canvas.parentElement.innerHTML = `<p style="font-size:.82rem;color:var(--text-muted);text-align:center;padding-top:3rem">Keine Quellen erfasst</p>`;
+    } else {
+      Charts.source = new Chart(sCtx, {
+        type: 'bar',
+        data: {
+          labels: srcLabels,
+          datasets: [
+            { label:'Interviews', data: srcLabels.map(s=>srcMap[s].interview), backgroundColor: isDark()?'rgba(251,191,36,.7)':'rgba(245,158,11,.75)', borderRadius: 4, borderSkipped: false },
+            { label:'Zusagen',    data: srcLabels.map(s=>srcMap[s].zusage),   backgroundColor: isDark()?'rgba(74,222,128,.7)':'rgba(34,197,94,.75)',  borderRadius: 4, borderSkipped: false },
+          ],
+        },
+        options: {
+          ...baseBarOpts(c),
+          plugins: {
+            ...baseBarOpts(c).plugins,
+            legend: { labels: { color: c.text, font: { family: c.font, size: 11 }, boxWidth: 11, padding: 10 } },
+          },
+        },
+      });
+    }
+  }
+}
+
+function baseBarOpts(c) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: tooltipStyle(),
+    },
+    scales: {
+      x: {
+        grid: { color: c.grid, drawBorder: false },
+        ticks: { color: c.text, font: { family: c.font, size: 10 } },
+      },
+      y: {
+        grid: { color: c.grid, drawBorder: false },
+        ticks: { color: c.text, font: { family: c.font, size: 10 }, precision: 0 },
+        beginAtZero: true,
+      },
+    },
+  };
+}
+
+function tooltipStyle() {
+  const dark = isDark();
+  return {
+    backgroundColor: dark ? 'rgba(30,30,45,0.95)' : 'rgba(15,15,25,0.92)',
+    titleColor: dark ? '#f0f0fa' : '#f0f0fa',
+    bodyColor:  dark ? '#8888a8' : '#9898b2',
+    borderColor: 'rgba(99,102,241,.3)',
+    borderWidth: 1,
+    padding: 10,
+    cornerRadius: 10,
+    titleFont: { family: "'Outfit', sans-serif", size: 12, weight: '700' },
+    bodyFont:  { family: "'Outfit', sans-serif", size: 11 },
+  };
+}
+
+// ─── Table ────────────────────────────────────────────────────────────────────
+function renderTable() {
+  document.getElementById('view-table').classList.remove('hidden');
+  document.getElementById('view-kanban').classList.add('hidden');
+
+  const tbody = document.getElementById('table-body');
+  const empty = document.getElementById('table-empty');
+
+  if (!State.filtered.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    lucide.createIcons();
+    return;
+  }
+  empty.classList.add('hidden');
+
+  tbody.innerHTML = State.filtered.map(a => {
+    const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
+    const stale  = a.status === 'Offen' && daysSince(lastTs) > 14;
+    return `<tr onclick="openDetail('${a.id}')">
+      <td class="td-primary">
+        ${stale ? '<span class="kanban-stale-dot" title="Offen seit >14 Tagen"></span>' : ''}
+        ${escHtml(a.company)}
+      </td>
+      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
+      <td class="hide-sm"><span class="badge ${statusClass(a.status)}">${a.status}</span></td>
+      <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'–')}</td>
+      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDate(a.applicationDate)}</td>
+      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
+      <td onclick="event.stopPropagation()">
+        <div class="table-actions">
+          <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" style="color:var(--text-muted)"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  lucide.createIcons();
+  updateSortHeaders();
+}
+
+// ─── Kanban ───────────────────────────────────────────────────────────────────
+const KANBAN_COLS = [
+  { status:'Offen',     dot:'var(--kanban-open-accent)', label:'Offen' },
+  { status:'Interview', dot:'var(--kanban-int-accent)',  label:'Interview' },
+  { status:'Absage',    dot:'var(--kanban-rej-accent)',  label:'Absage' },
+  { status:'Zusage',    dot:'var(--kanban-acc-accent)',  label:'Zusage' },
+];
+
+const KANBAN_SORT_OPTIONS = [
+  { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
+  { col:'applicationDate', dir:'asc',  label:'Älteste zuerst' },
+  { col:'company',         dir:'asc',  label:'Firma A–Z' },
+  { col:'company',         dir:'desc', label:'Firma Z–A' },
+  { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
+  { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
+];
+
+function renderKanban() {
+  document.getElementById('view-table').classList.add('hidden');
+  document.getElementById('view-kanban').classList.remove('hidden');
+
+  const board = document.getElementById('kanban-board');
+  board.innerHTML = KANBAN_COLS.map(({ status, dot, label }) => {
+    const colApps = sortAppsForKanban(State.filtered.filter(a => a.status === status), status);
+    const ks = State.kanbanSort[status];
+    const currentSortLabel = KANBAN_SORT_OPTIONS.find(o => o.col===ks.col && o.dir===ks.dir)?.label || 'Sortierung';
+
+    const cards = colApps.map(a => {
+      const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
+      const stale  = status === 'Offen' && daysSince(lastTs) > 14;
+      return `<div class="kanban-card"
+        draggable="true"
+        data-id="${a.id}"
+        ondragstart="onDragStart(event,'${a.id}')"
+        onclick="openDetail('${a.id}')">
+        <div class="kanban-card-company">
+          ${stale ? '<span class="kanban-stale-dot" title="Offen seit >14 Tagen"></span>' : ''}
+          ${escHtml(a.company)}
+        </div>
+        <div class="kanban-card-position">${escHtml(a.position)}</div>
+        <div class="kanban-card-meta">
+          <span class="kanban-card-date">${fmtDateShort(a.applicationDate)}</span>
+          ${a.expectedSalary ? `<span class="kanban-card-salary">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div>
+      <div class="kanban-col-header">
+        <div class="kanban-col-title">
+          <span class="kanban-col-dot" style="background:${dot}"></span>
+          ${label}
+          <span class="kanban-col-count">${colApps.length}</span>
+        </div>
+        <div style="position:relative">
+          <button class="kanban-sort-btn" onclick="toggleKanbanSortMenu(event,'${status}')" title="Sortierung">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 5 19 12"/><line x1="12" y1="19" x2="12" y2="5" style="display:none"/></svg>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+            <span class="sort-label">${currentSortLabel}</span>
+          </button>
+        </div>
+      </div>
+      <div class="kanban-col kanban-col-body"
+        data-status="${status}"
+        ondragover="onDragOver(event)"
+        ondrop="onDrop(event,'${status}')"
+        ondragleave="onDragLeave(event)">
+        ${cards || `<div style="padding:1rem 0.5rem;text-align:center;font-size:0.75rem;color:var(--text-muted)">Keine Einträge</div>`}
+      </div>
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+function toggleKanbanSortMenu(e, status) {
+  e.stopPropagation();
+  // Remove existing popovers
+  document.querySelectorAll('.sort-popover').forEach(p => p.remove());
+
+  const btn = e.currentTarget;
+  const ks  = State.kanbanSort[status];
+  const popover = document.createElement('div');
+  popover.className = 'sort-popover';
+  const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  popover.innerHTML = KANBAN_SORT_OPTIONS.map(o => {
+    const isActive = o.col===ks.col && o.dir===ks.dir;
+    return `<div class="sort-popover-item${isActive?' active':''}" onclick="sortKanbanCol('${status}','${o.col}','${o.dir}')">
+      <span style="width:16px;flex-shrink:0;opacity:${isActive?1:0}">${SVG_CHECK}</span>
+      ${o.label}
+    </div>`;
+  }).join('');
+
+  btn.parentElement.appendChild(popover);
+}
+
+// Hide/show columns based on viewport
+const mq_sm = window.matchMedia('(max-width: 640px)');
+const mq_md = window.matchMedia('(max-width: 900px)');
+function applyCssHideClasses() {
+  document.querySelectorAll('.hide-sm').forEach(el => el.style.display = mq_sm.matches ? 'none' : '');
+  document.querySelectorAll('.hide-md').forEach(el => el.style.display = mq_md.matches ? 'none' : '');
+}
+mq_sm.addEventListener('change', applyCssHideClasses);
+mq_md.addEventListener('change', applyCssHideClasses);
+window.addEventListener('load', applyCssHideClasses);
