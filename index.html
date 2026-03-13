@@ -22,10 +22,23 @@
 
   <aside id="sidebar">
     <div class="nav-logo">
+      <!-- Logo mark: layered briefcase with accent ring -->
       <div class="nav-logo-icon">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Bag body -->
+          <rect x="3" y="10" width="26" height="18" rx="4" fill="white" fill-opacity="0.92"/>
+          <!-- Handle -->
+          <path d="M11 10V8.5A4.5 4.5 0 0 1 15.5 4h1A4.5 4.5 0 0 1 21 8.5V10" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          <!-- Centre bar -->
+          <rect x="3" y="18" width="26" height="3" rx="0" fill="white" fill-opacity="0.3"/>
+          <!-- Buckle dot -->
+          <rect x="14" y="17" width="4" height="5" rx="2" fill="white" fill-opacity="0.9"/>
+        </svg>
       </div>
-      <span class="nav-logo-text">JobTracker</span>
+      <!-- Wordmark: "Job" bold + "Tracker" light with accent dot -->
+      <span class="nav-logo-text">
+        <span class="nav-logo-job">Job</span><span class="nav-logo-tracker">Tracker</span><span class="nav-logo-dot">.</span>
+      </span>
     </div>
     <nav style="display:flex;flex-direction:column;gap:2px;">
       <button class="nav-item" data-nav="dashboard" onclick="navigate('dashboard')">
@@ -112,10 +125,10 @@
       <div class="filter-bar">
         <div class="filter-search-wrap">
           <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="filter-search" type="text" class="form-input" placeholder="Suche…" oninput="applyFilters()" style="padding-left:2.25rem" />
+          <input id="filter-search" type="text" class="form-input" placeholder="Firma, Position suchen…" oninput="applyFilters()" style="padding-left:2.25rem" autocomplete="off" autocorrect="off" spellcheck="false" />
         </div>
         <select id="filter-status" class="form-select" style="width:auto;flex-shrink:0" onchange="applyFilters()">
-          <option value="">Alle Status</option>
+          <option value="">Alle</option>
           <option>Offen</option><option>Interview</option><option>Absage</option><option>Zusage</option>
         </select>
         <select id="filter-source" class="form-select" style="width:auto;flex-shrink:0" onchange="applyFilters()">
@@ -123,6 +136,7 @@
         </select>
       </div>
       <div id="view-table">
+        <!-- Desktop table (hidden on mobile via CSS) -->
         <div class="table-wrap">
           <div class="table-scroll">
             <table>
@@ -130,7 +144,7 @@
                 <tr>
                   <th class="sortable" data-col="company" onclick="toggleSort('company')">Firma<span class="sort-arrow"></span></th>
                   <th class="sortable" data-col="position" onclick="toggleSort('position')">Position<span class="sort-arrow"></span></th>
-                  <th class="sortable hide-sm" data-col="status" onclick="toggleSort('status')">Status<span class="sort-arrow"></span></th>
+                  <th class="sortable" data-col="status" onclick="toggleSort('status')">Status<span class="sort-arrow"></span></th>
                   <th class="hide-md">Quelle</th>
                   <th class="sortable hide-md" data-col="applicationDate" onclick="toggleSort('applicationDate')">Datum<span class="sort-arrow"></span></th>
                   <th class="sortable hide-md" data-col="expectedSalary" onclick="toggleSort('expectedSalary')">Gehalt<span class="sort-arrow"></span></th>
@@ -148,6 +162,8 @@
             <p style="font-size:0.82rem;color:var(--text-muted)">Erstelle deinen ersten Eintrag mit dem + Button</p>
           </div>
         </div>
+        <!-- Mobile card list (shown instead of table on ≤640px) -->
+        <div id="app-list" class="app-list"></div>
       </div>
       <div id="view-kanban" class="hidden">
         <div class="kanban-board" id="kanban-board"></div>
@@ -312,11 +328,13 @@
         <div class="form-grid">
           <div class="form-group">
             <label class="form-label" for="f-company">Firma *</label>
-            <input id="f-company" type="text" class="form-input" required placeholder="z.B. Acme GmbH" />
+            <input id="f-company" type="text" class="form-input" required placeholder="z.B. Acme GmbH"
+              inputmode="text" autocomplete="organization" enterkeyhint="next" />
           </div>
           <div class="form-group">
             <label class="form-label" for="f-position">Position *</label>
-            <input id="f-position" type="text" class="form-input" required placeholder="z.B. Senior Dev" />
+            <input id="f-position" type="text" class="form-input" required placeholder="z.B. Senior Dev"
+              inputmode="text" autocomplete="off" enterkeyhint="next" />
           </div>
           <div class="form-group">
             <label class="form-label" for="f-status">Status</label>
@@ -326,31 +344,37 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="f-source">Quelle</label>
-            <input id="f-source" type="text" class="form-input" placeholder="z.B. LinkedIn" />
+            <input id="f-source" type="text" class="form-input" placeholder="z.B. LinkedIn"
+              inputmode="text" autocomplete="off" enterkeyhint="next" />
           </div>
           <div class="form-group">
             <label class="form-label" for="f-salary">Wunschgehalt (€)</label>
-            <input id="f-salary" type="number" min="0" class="form-input" placeholder="65000" />
+            <input id="f-salary" type="number" min="0" class="form-input" placeholder="65000"
+              inputmode="numeric" enterkeyhint="next" />
           </div>
           <div class="form-group">
             <label class="form-label" for="f-date">Bewerbungsdatum</label>
-            <input id="f-date" type="date" class="form-input" />
+            <input id="f-date" type="date" class="form-input" enterkeyhint="next" />
           </div>
           <div class="form-group col-span-2">
             <label class="form-label" for="f-platform">Stellenanzeige URL</label>
-            <input id="f-platform" type="url" class="form-input" placeholder="https://…" />
+            <input id="f-platform" type="url" class="form-input" placeholder="https://…"
+              inputmode="url" autocomplete="off" enterkeyhint="next" />
           </div>
           <div class="form-group col-span-2">
             <label class="form-label" for="f-docs">Unterlagen (Cloud-Link)</label>
-            <input id="f-docs" type="url" class="form-input" placeholder="https://drive.google.com/…" />
+            <input id="f-docs" type="url" class="form-input" placeholder="https://drive.google.com/…"
+              inputmode="url" autocomplete="off" enterkeyhint="next" />
           </div>
           <div class="form-group col-span-2 hidden" id="f-rejection-group">
             <label class="form-label" for="f-rejection">Absagegrund</label>
-            <input id="f-rejection" type="text" class="form-input" placeholder="z.B. Überqualifiziert" />
+            <input id="f-rejection" type="text" class="form-input" placeholder="z.B. Überqualifiziert"
+              inputmode="text" autocomplete="off" enterkeyhint="next" />
           </div>
           <div class="form-group col-span-2">
             <label class="form-label" for="f-notes">Notizen</label>
-            <textarea id="f-notes" class="form-textarea" placeholder="Gesprächspartner, Anmerkungen…"></textarea>
+            <textarea id="f-notes" class="form-textarea" placeholder="Gesprächspartner, Anmerkungen…"
+              enterkeyhint="done" autocomplete="off"></textarea>
           </div>
         </div>
       </form>
@@ -417,6 +441,74 @@
 
 <div id="toast-root"></div>
 
+<!-- CUSTOM CONFIRM MODAL (replaces window.confirm – works in iOS PWA standalone) -->
+<div id="confirm-modal" class="modal-backdrop hidden" onclick="if(event.target===this){hideModal('confirm-modal')}">
+  <div class="modal-box" style="max-width:360px">
+    <div class="modal-header">
+      <h2 id="confirm-title" style="font-size:1rem"></h2>
+    </div>
+    <div class="modal-body" style="padding-top:0">
+      <p id="confirm-message" style="font-size:0.875rem;color:var(--text-secondary);white-space:pre-line;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button id="confirm-cancel" class="btn btn-ghost" onclick="hideModal('confirm-modal')">Abbrechen</button>
+      <button id="confirm-ok" class="btn btn-danger">Löschen</button>
+    </div>
+  </div>
+</div>
+
+<!-- iOS INSTALL INSTRUCTIONS MODAL -->
+<div id="ios-install-modal" class="modal-backdrop hidden" onclick="if(event.target===this)hideModal('ios-install-modal')">
+  <div class="modal-box" style="max-width:340px">
+    <div class="modal-header">
+      <div>
+        <h2 style="font-size:1rem;margin-bottom:3px">App installieren</h2>
+        <p style="font-size:0.78rem;color:var(--text-muted)">Zum Home-Bildschirm hinzufügen</p>
+      </div>
+      <button class="btn btn-icon" onclick="hideModal('ios-install-modal')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding-top:0.5rem">
+      <div class="install-step">
+        <div class="install-step-num">1</div>
+        <div>Tippe auf das <strong>Teilen-Symbol</strong>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin:0 2px"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          unten in der Toolbar
+        </div>
+      </div>
+      <div class="install-step">
+        <div class="install-step-num">2</div>
+        <div>Scrolle runter und wähle <strong>„Zum Home-Bildschirm"</strong></div>
+      </div>
+      <div class="install-step">
+        <div class="install-step-num">3</div>
+        <div>Tippe oben rechts auf <strong>„Hinzufügen"</strong></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" style="width:100%" onclick="hideModal('ios-install-modal');localStorage.setItem('jt-install-dismissed','1')">Verstanden</button>
+    </div>
+  </div>
+</div>
+
+<!-- INSTALL BANNER (Android Chrome / non-iOS) -->
+<div id="install-banner" class="install-banner hidden">
+  <div class="install-banner-logo">
+    <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect x="3" y="10" width="26" height="18" rx="4" fill="var(--accent)"/><path d="M11 10V8.5A4.5 4.5 0 0 1 15.5 4h1A4.5 4.5 0 0 1 21 8.5V10" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" fill="none"/><rect x="14" y="17" width="4" height="5" rx="2" fill="white" fill-opacity="0.9"/></svg>
+  </div>
+  <div class="install-banner-text">
+    <div class="install-banner-title">JobTracker als App installieren</div>
+    <div class="install-banner-sub" id="install-banner-sub">Offline verfügbar · Kein Browser nötig</div>
+  </div>
+  <div class="install-banner-actions">
+    <button class="btn btn-primary btn-sm" id="install-banner-btn" onclick="installBannerAction()">Installieren</button>
+    <button class="btn btn-icon" onclick="dismissInstallBanner()" title="Schließen">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+</div>
+
 <!-- Google Identity Services + GAPI (loaded on-demand in app.js, listed here for clarity/preconnect) -->
 <link rel="preconnect" href="https://accounts.google.com" />
 <link rel="preconnect" href="https://apis.google.com" />
@@ -439,6 +531,23 @@ function cycleTheme() {
   const labels = { light:'Hell ☀️', dark:'Dunkel 🌙', system:'System 🖥️' };
   toast(labels[next], 'info');
 }
+
+function installBannerAction() {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS) {
+    dismissInstallBanner();
+    showModal('ios-install-modal');
+  } else {
+    triggerInstall();
+  }
+}
+
+// Set correct sub-text based on OS
+(function() {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const sub = document.getElementById('install-banner-sub');
+  if (sub && isIOS) sub.textContent = 'Tippe auf „Teilen" → „Zum Home-Bildschirm"';
+})();
 </script>
 <style>
 @keyframes gdSpin {

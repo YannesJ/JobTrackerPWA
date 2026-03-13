@@ -37,6 +37,13 @@ function fmtDate(iso) {
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
+function fmtDateTime(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' })
+       + ', ' + d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }) + ' Uhr';
+}
 function fmtDateShort(iso) {
   if (!iso) return '–';
   const d = new Date(iso);
@@ -261,8 +268,11 @@ function renderView() {
   else renderKanban();
 }
 
-// ─── Drag & Drop ──────────────────────────────────────────────────────────────
-let dragId = null;
+// ─── Drag & Drop (Mouse + iOS Touch) ─────────────────────────────────────────
+let dragId    = null;
+let _touchClone = null;
+let _touchSrc   = null;
+let _lastDropTarget = null;
 
 function onDragStart(e, id) {
   dragId = id;
@@ -280,15 +290,70 @@ async function onDrop(e, newStatus) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
   if (!dragId) return;
-  const app = State.all.find(a => a.id === dragId);
+  await _applyDrop(dragId, newStatus);
+  document.querySelectorAll('.kanban-card.dragging').forEach(c => c.classList.remove('dragging'));
+  dragId = null;
+}
+
+// ── Touch support (iOS Safari doesn't fire drag events) ─────────────────────
+function onTouchStart(e, id) {
+  dragId    = id;
+  _touchSrc = e.currentTarget;
+  _touchSrc.classList.add('dragging');
+
+  // Create a ghost clone that follows the finger
+  _touchClone = _touchSrc.cloneNode(true);
+  const r = _touchSrc.getBoundingClientRect();
+  Object.assign(_touchClone.style, {
+    position: 'fixed', top: r.top + 'px', left: r.left + 'px',
+    width: r.width + 'px', opacity: '0.75', zIndex: '9999',
+    pointerEvents: 'none', borderRadius: '12px',
+    transform: 'scale(1.03)',
+    transition: 'none', boxShadow: '0 8px 24px rgba(0,0,0,.25)',
+  });
+  document.body.appendChild(_touchClone);
+}
+
+function onTouchMove(e) {
+  if (!_touchClone) return;
+  e.preventDefault(); // prevent scroll
+  const t = e.touches[0];
+  const r = _touchSrc.getBoundingClientRect();
+  _touchClone.style.top  = (t.clientY - r.height / 2) + 'px';
+  _touchClone.style.left = (t.clientX - r.width  / 2) + 'px';
+
+  // Highlight drop target under finger
+  _touchClone.style.display = 'none';
+  const under = document.elementFromPoint(t.clientX, t.clientY);
+  _touchClone.style.display = '';
+  const col = under?.closest('.kanban-col-body');
+  if (_lastDropTarget && _lastDropTarget !== col) _lastDropTarget.classList.remove('drag-over');
+  if (col) col.classList.add('drag-over');
+  _lastDropTarget = col || null;
+}
+
+async function onTouchEnd(e) {
+  if (!_touchClone) return;
+  _touchClone.remove(); _touchClone = null;
+  _touchSrc?.classList.remove('dragging');
+
+  if (_lastDropTarget) {
+    _lastDropTarget.classList.remove('drag-over');
+    const newStatus = _lastDropTarget.dataset.status;
+    if (newStatus && dragId) await _applyDrop(dragId, newStatus);
+    _lastDropTarget = null;
+  }
+  dragId = null; _touchSrc = null;
+}
+
+async function _applyDrop(id, newStatus) {
+  const app = State.all.find(a => a.id === id);
   if (app && app.status !== newStatus) {
-    app.status = newStatus;
+    app.status  = newStatus;
     app.history = [...(app.history || []), { status: newStatus, timestamp: nowISO() }];
     await saveApp(app);
     toast(`Status → ${newStatus}`, 'success');
   }
-  document.querySelectorAll('.kanban-card.dragging').forEach(c => c.classList.remove('dragging'));
-  dragId = null;
 }
 
 // ─── Form ─────────────────────────────────────────────────────────────────────
@@ -367,7 +432,7 @@ function openDetail(id) {
 
   // Details
   document.getElementById('d-source').textContent    = a.source || '–';
-  document.getElementById('d-date').textContent      = fmtDate(a.applicationDate);
+  document.getElementById('d-date').textContent      = fmtDateTime(a.applicationDate);
   document.getElementById('d-salary').textContent    = fmtEuro(a.expectedSalary);
   document.getElementById('d-rejection').textContent = a.rejectionReason || '–';
 
@@ -402,7 +467,7 @@ function openDetail(id) {
         </div>
         <div class="timeline-content">
           <div class="timeline-status">${escHtml(h.status)}</div>
-          <div class="timeline-ts">${fmtDate(h.timestamp)}</div>
+          <div class="timeline-ts">${fmtDateTime(h.timestamp)}</div>
         </div>
       </div>`).join('');
   }
@@ -415,14 +480,31 @@ function openDetail(id) {
 }
 function closeDetail() { hideModal('detail-modal'); }
 
-// ─── Delete Confirm ───────────────────────────────────────────────────────────
-function confirmDelete(id) {
+async function confirmDelete(id) {
   const a = State.all.find(x => x.id === id);
   if (!a) return;
-  if (confirm(`"${a.company} – ${a.position}" wirklich löschen?`)) deleteApp(id);
+  const ok = await showConfirm(
+    'Bewerbung löschen?',
+    `"${a.company} – ${a.position}" wird unwiderruflich entfernt.`,
+    'Löschen', 'danger'
+  );
+  if (ok) deleteApp(id);
 }
 
-// ─── Modal Helpers ────────────────────────────────────────────────────────────
+// ─── Custom Confirm Dialog (replaces window.confirm – works in iOS PWA) ───────
+function showConfirm(title, message, okLabel = 'OK', variant = 'primary') {
+  return new Promise(resolve => {
+    const el = document.getElementById('confirm-modal');
+    document.getElementById('confirm-title').textContent   = title;
+    document.getElementById('confirm-message').textContent = message;
+    const btn = document.getElementById('confirm-ok');
+    btn.textContent  = okLabel;
+    btn.className    = `btn btn-${variant}`;
+    btn.onclick      = () => { hideModal('confirm-modal'); resolve(true);  };
+    document.getElementById('confirm-cancel').onclick = () => { hideModal('confirm-modal'); resolve(false); };
+    showModal('confirm-modal');
+  });
+}
 function showModal(id) {
   const el = document.getElementById(id);
   el.classList.remove('hidden');
@@ -492,7 +574,12 @@ async function importData(e) {
 }
 
 async function clearAllData() {
-  if (!confirm('Alle Daten unwiderruflich löschen?')) return;
+  const ok = await showConfirm(
+    'Alle Daten löschen?',
+    'Alle Bewerbungen werden unwiderruflich entfernt. Diese Aktion kann nicht rückgängig gemacht werden.',
+    'Löschen', 'danger'
+  );
+  if (!ok) return;
   await idbClear(DB);
   await loadAll();
   toast('Alle Daten gelöscht', 'info');
@@ -655,22 +742,20 @@ async function _gdRunSync() {
   }
 
   if (localTs >= remoteTs) {
-    // Local is newer → offer to overwrite Drive
-    const overwrite = confirm(
-      `Dein lokales Backup ist neuer (${_gdFmtTs(localTs)}) als Google Drive (${_gdFmtTs(remoteTs)}).\n\n` +
-      `OK  → Google Drive überschreiben (lokale Daten hochladen)\n` +
-      `Abbrechen → Nichts tun`
+    const overwrite = await showConfirm(
+      'Lokales Backup ist neuer',
+      `Lokal: ${_gdFmtTs(localTs)}\nDrive: ${_gdFmtTs(remoteTs)}\n\nGoogle Drive überschreiben?`,
+      'Hochladen'
     );
     if (!overwrite) { toast('Sync abgebrochen.', 'info'); return; }
     await _gdUpload(remoteFile.id, localData);
     toast('Google Drive erfolgreich überschrieben ✓', 'success');
     _gdUpdateStatus('synced');
   } else {
-    // Drive is newer → offer to download
-    const download = confirm(
-      `Google Drive Backup ist neuer (${_gdFmtTs(remoteTs)}) als deine lokalen Daten (${_gdFmtTs(localTs)}).\n\n` +
-      `OK  → Lokale Daten aus Google Drive wiederherstellen\n` +
-      `Abbrechen → Nichts tun`
+    const download = await showConfirm(
+      'Drive-Backup ist neuer',
+      `Drive: ${_gdFmtTs(remoteTs)}\nLokal: ${_gdFmtTs(localTs)}\n\nLokale Daten aus Google Drive wiederherstellen?`,
+      'Herunterladen'
     );
     if (!download) { toast('Sync abgebrochen.', 'info'); return; }
     await _gdDownloadAndImport(remoteFile.id);
@@ -808,6 +893,120 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.sort-popover').forEach(p => p.remove());
   }
 });
+
+// ─── Prevent Pull-to-Refresh (iOS PWA + Chrome Android) ──────────────────────
+let _startY = 0;
+document.addEventListener('touchstart', e => { _startY = e.touches[0].pageY; }, { passive: true });
+document.addEventListener('touchmove', e => {
+  // Block pull-down only when at the very top and not inside a scrollable child
+  if (window.scrollY === 0 && e.touches[0].pageY > _startY) {
+    const target = e.target.closest('.modal-body, .table-scroll, .kanban-col-body, .app-list');
+    if (!target) e.preventDefault();
+  }
+}, { passive: false });
+
+// ─── PWA Install Prompt ───────────────────────────────────────────────────────
+let _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  // Show our custom banner after a short delay
+  setTimeout(showInstallBanner, 2000);
+});
+
+function showInstallBanner() {
+  // Don't show if already installed
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+  if (localStorage.getItem('jt-install-dismissed')) return;
+  const el = document.getElementById('install-banner');
+  if (el) { el.classList.remove('hidden'); el.classList.add('visible'); }
+}
+
+async function triggerInstall() {
+  if (_deferredInstallPrompt) {
+    _deferredInstallPrompt.prompt();
+    const { outcome } = await _deferredInstallPrompt.userChoice;
+    _deferredInstallPrompt = null;
+    dismissInstallBanner();
+    if (outcome === 'accepted') toast('App installiert ✓', 'success');
+  }
+}
+
+function dismissInstallBanner() {
+  localStorage.setItem('jt-install-dismissed', '1');
+  const el = document.getElementById('install-banner');
+  if (el) { el.classList.remove('visible'); setTimeout(() => el.classList.add('hidden'), 400); }
+}
+
+function showIOSInstallModal() {
+  showModal('ios-install-modal');
+}
+
+// On iOS (no beforeinstallprompt), show manual instructions after first visit
+window.addEventListener('load', () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if (isIOS && !isStandalone && !localStorage.getItem('jt-install-dismissed')) {
+    setTimeout(() => {
+      const el = document.getElementById('install-banner');
+      if (el) { el.classList.remove('hidden'); el.classList.add('visible'); }
+    }, 2500);
+  }
+});
+
+// ─── Virtual Keyboard: scroll focused input into view ─────────────────────────
+// On iOS/Android the virtual keyboard shrinks the viewport but doesn't fire resize.
+// visualViewport API lets us react and scroll the focused element above the keyboard.
+if (window.visualViewport) {
+  let _kvLast = window.visualViewport.height;
+  window.visualViewport.addEventListener('resize', () => {
+    const vvh = window.visualViewport.height;
+    const el  = document.activeElement;
+    if (!el || !['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+
+    // Keyboard opened (viewport shrank)
+    if (vvh < _kvLast - 50) {
+      // Give browser time to reflow, then scroll input into center of visible area
+      setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        const modalBody = el.closest('.modal-body');
+        if (modalBody) {
+          // Scroll within modal-body so input is visible above keyboard
+          const bodyRect  = modalBody.getBoundingClientRect();
+          const inputBot  = rect.bottom - bodyRect.top;
+          const visible   = vvh - bodyRect.top - 16; // 16px breathing room
+          if (inputBot > visible) {
+            modalBody.scrollTop += inputBot - visible + 24;
+          }
+        } else {
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 120);
+    }
+    _kvLast = vvh;
+  });
+
+  // Also scroll on focus (handles case where keyboard is already open)
+  document.addEventListener('focusin', e => {
+    const el = e.target;
+    if (!['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+    if (window.visualViewport.height < window.innerHeight * 0.75) {
+      // Keyboard is likely open
+      setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        const modalBody = el.closest('.modal-body');
+        if (modalBody) {
+          const bodyRect = modalBody.getBoundingClientRect();
+          const inputBot = rect.bottom - bodyRect.top;
+          const visible  = window.visualViewport.height - bodyRect.top - 16;
+          if (inputBot > visible) {
+            modalBody.scrollTop += inputBot - visible + 24;
+          }
+        }
+      }, 80);
+    }
+  });
+}
 
 // ─── Service Worker ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {

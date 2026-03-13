@@ -28,7 +28,10 @@ function renderDashboard() {
   const interviews = apps.filter(a => a.status === 'Interview').length;
   const zusagen    = apps.filter(a => a.status === 'Zusage').length;
   const offene     = apps.filter(a => a.status === 'Offen').length;
-  const successRate = total ? Math.round((zusagen / total) * 100) : 0;
+  const absagen    = apps.filter(a => a.status === 'Absage').length;
+
+  // Interview-Rate: (interviews + zusagen) / total — how many got a response worth tracking
+  const interviewRate = total ? Math.round(((interviews + zusagen) / total) * 100) : 0;
 
   const responseTimes = apps
     .filter(a => a.history?.length > 1)
@@ -43,10 +46,18 @@ function renderDashboard() {
 
   // KPI Cards
   document.getElementById('kpi-grid').innerHTML = [
-    { label:'Gesamt',     value: total,                        sub: `${offene} offen`,            icon:'file-text',  color:'#6366f1', bg:'rgba(99,102,241,.1)' },
-    { label:'Erfolg',     value: successRate+'%',              sub: `${zusagen} Zusage(n)`,        icon:'trending-up', color:'#22c55e', bg:'rgba(34,197,94,.1)'  },
-    { label:'Interviews', value: interviews,                   sub: 'aktive Gespräche',            icon:'users',      color:'#f59e0b', bg:'rgba(245,158,11,.1)' },
-    { label:'Ø Antwort',  value: avgResponse !== null ? avgResponse+'d' : '–', sub:'bis 1. Statuswechsel', icon:'clock', color:'#ec4899', bg:'rgba(236,72,153,.1)' },
+    { label:'Gesamt',        value: total,
+      sub: `${offene} offen · ${absagen} Absage${absagen!==1?'n':''}`,
+      icon:'file-text',   color:'#6366f1', bg:'rgba(99,102,241,.1)' },
+    { label:'Interview-Rate', value: interviewRate+'%',
+      sub: `${interviews + zusagen} von ${total} erreichten`,
+      icon:'trending-up', color:'#22c55e', bg:'rgba(34,197,94,.1)'  },
+    { label:'Interviews',    value: interviews,
+      sub: `${zusagen} Zusage${zusagen!==1?'n':''}`,
+      icon:'users',       color:'#f59e0b', bg:'rgba(245,158,11,.1)' },
+    { label:'Ø Antwort',    value: avgResponse !== null ? avgResponse+'d' : '–',
+      sub:'bis 1. Statuswechsel',
+      icon:'clock',       color:'#ec4899', bg:'rgba(236,72,153,.1)' },
   ].map(k => `
     <div class="kpi-card">
       <div class="kpi-icon" style="background:${k.bg}">
@@ -223,34 +234,131 @@ function tooltipStyle() {
   };
 }
 
-// ─── Table ────────────────────────────────────────────────────────────────────
+// ─── Table / Mobile-Card List ─────────────────────────────────────────────────
+const MOBILE_SORT_OPTIONS = [
+  { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
+  { col:'applicationDate', dir:'asc',  label:'Älteste zuerst' },
+  { col:'company',         dir:'asc',  label:'Firma A–Z' },
+  { col:'company',         dir:'desc', label:'Firma Z–A' },
+  { col:'status',          dir:'asc',  label:'Status' },
+  { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
+  { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
+];
+
+function toggleMobileSortMenu(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.sort-popover').forEach(p => p.remove());
+  const btn = e.currentTarget;
+  const popover = document.createElement('div');
+  popover.className = 'sort-popover sort-popover--mobile';
+  const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  popover.innerHTML = MOBILE_SORT_OPTIONS.map(o => {
+    const isActive = o.col === State.sort.col && o.dir === State.sort.dir;
+    return `<div class="sort-popover-item${isActive ? ' active' : ''}"
+      onclick="setMobileSort('${o.col}','${o.dir}')">
+      <span style="width:16px;flex-shrink:0;opacity:${isActive ? 1 : 0}">${SVG_CHECK}</span>
+      ${o.label}
+    </div>`;
+  }).join('');
+  btn.parentElement.appendChild(popover);
+}
+
+function setMobileSort(col, dir) {
+  State.sort = { col, dir };
+  document.querySelectorAll('.sort-popover').forEach(p => p.remove());
+  sortApps();
+  renderTable();
+}
+
 function renderTable() {
   document.getElementById('view-table').classList.remove('hidden');
   document.getElementById('view-kanban').classList.add('hidden');
 
-  const tbody = document.getElementById('table-body');
-  const empty = document.getElementById('table-empty');
+  const empty    = document.getElementById('table-empty');
+  const isMobile = window.matchMedia('(max-width: 640px)').matches;
 
   if (!State.filtered.length) {
-    tbody.innerHTML = '';
-    empty.classList.remove('hidden');
-    lucide.createIcons();
+    if (document.getElementById('table-body')) document.getElementById('table-body').innerHTML = '';
+    const listEl = document.getElementById('app-list');
+    if (listEl) listEl.innerHTML = '';
+    empty?.classList.remove('hidden');
     return;
   }
-  empty.classList.add('hidden');
+  empty?.classList.add('hidden');
 
+  // ── Mobile card list ────────────────────────────────────────────────────────
+  if (isMobile) {
+    document.getElementById('table-body').innerHTML = '';
+    const list = document.getElementById('app-list');
+
+    // Current sort label for button
+    const curSort = MOBILE_SORT_OPTIONS.find(o => o.col === State.sort.col && o.dir === State.sort.dir);
+    const sortLabel = curSort?.label || 'Sortierung';
+
+    const SVG_SORT = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>`;
+
+    list.innerHTML = `
+      <div class="list-sort-bar">
+        <span class="list-count">${State.filtered.length} Einträge</span>
+        <div style="position:relative">
+          <button class="list-sort-btn" onclick="toggleMobileSortMenu(event)">
+            ${SVG_SORT}
+            <span>${sortLabel}</span>
+          </button>
+        </div>
+      </div>
+      <div class="list-cards">
+        ${State.filtered.map(a => {
+          const lastTs  = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
+          const stale   = a.status === 'Offen' && daysSince(lastTs) > 14;
+          const dateStr = fmtDateTime(a.applicationDate);
+          return `
+          <div class="app-card" onclick="openDetail('${a.id}')">
+            <div class="app-card-accent app-card-accent--${a.status.toLowerCase()}"></div>
+            <div class="app-card-body">
+              <div class="app-card-top">
+                <div class="app-card-company">
+                  ${stale ? '<span class="kanban-stale-dot" title="Offen &gt;14 Tage"></span>' : ''}
+                  ${escHtml(a.company)}
+                </div>
+                <span class="badge ${statusClass(a.status)} app-card-badge">${a.status}</span>
+              </div>
+              <div class="app-card-position">${escHtml(a.position)}</div>
+              <div class="app-card-meta">
+                ${a.source ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
+                <span class="app-card-chip app-card-chip--mono">${dateStr}</span>
+                ${a.expectedSalary ? `<span class="app-card-chip app-card-chip--accent">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+              </div>
+            </div>
+            <div class="app-card-actions" onclick="event.stopPropagation()">
+              <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" style="color:var(--text-muted)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              </button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    return;
+  }
+
+  // ── Desktop table ───────────────────────────────────────────────────────────
+  document.getElementById('app-list').innerHTML = '';
+  const tbody = document.getElementById('table-body');
   tbody.innerHTML = State.filtered.map(a => {
     const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
     const stale  = a.status === 'Offen' && daysSince(lastTs) > 14;
     return `<tr onclick="openDetail('${a.id}')">
       <td class="td-primary">
-        ${stale ? '<span class="kanban-stale-dot" title="Offen seit >14 Tagen"></span>' : ''}
+        ${stale ? '<span class="kanban-stale-dot" title="Offen seit &gt;14 Tagen"></span>' : ''}
         ${escHtml(a.company)}
       </td>
       <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
-      <td class="hide-sm"><span class="badge ${statusClass(a.status)}">${a.status}</span></td>
+      <td><span class="badge ${statusClass(a.status)}">${a.status}</span></td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'–')}</td>
-      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDate(a.applicationDate)}</td>
+      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
@@ -298,7 +406,11 @@ function renderKanban() {
         draggable="true"
         data-id="${a.id}"
         ondragstart="onDragStart(event,'${a.id}')"
-        onclick="openDetail('${a.id}')">
+        ontouchstart="onTouchStart(event,'${a.id}')"
+        ontouchmove="onTouchMove(event)"
+        ontouchend="onTouchEnd(event)"
+        onclick="openDetail('${a.id}')"
+        style="touch-action:none">
         <div class="kanban-card-company">
           ${stale ? '<span class="kanban-stale-dot" title="Offen seit >14 Tagen"></span>' : ''}
           ${escHtml(a.company)}
@@ -359,12 +471,16 @@ function toggleKanbanSortMenu(e, status) {
   btn.parentElement.appendChild(popover);
 }
 
-// Hide/show columns based on viewport
+// Hide/show columns based on viewport; re-render table at mobile breakpoint
 const mq_sm = window.matchMedia('(max-width: 640px)');
 const mq_md = window.matchMedia('(max-width: 900px)');
 function applyCssHideClasses() {
   document.querySelectorAll('.hide-sm').forEach(el => el.style.display = mq_sm.matches ? 'none' : '');
   document.querySelectorAll('.hide-md').forEach(el => el.style.display = mq_md.matches ? 'none' : '');
+  // Switch table ↔ card-list when crossing 640px
+  if (State.view === 'table' && document.getElementById('page-applications')?.classList.contains('active')) {
+    renderTable();
+  }
 }
 mq_sm.addEventListener('change', applyCssHideClasses);
 mq_md.addEventListener('change', applyCssHideClasses);
