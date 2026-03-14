@@ -9,22 +9,45 @@
 // ─── idb-keyval Store ─────────────────────────────────────────────────────────
 const { createStore, get: idbGet, set: idbSet, del: idbDel,
         entries: idbEntries, clear: idbClear } = idbKeyval;
-const DB = createStore('jobtracker', 'applications');
+const DB        = createStore('jobtracker', 'applications');
+const REMINDERS = createStore('jobtracker', 'reminders'); // { id, appId, date, note }
 
 // ─── App State ────────────────────────────────────────────────────────────────
 const State = {
-  all:     [],     // all applications
-  filtered:[],     // after filter/sort
+  all:     [],
+  filtered:[],
   view:    'table',
   sort:    { col: 'applicationDate', dir: 'desc' },
-  kanbanSort: {    // per-column sort state
+  kanbanSort: {
     Offen:     { col: 'applicationDate', dir: 'desc' },
     Interview: { col: 'applicationDate', dir: 'desc' },
     Absage:    { col: 'applicationDate', dir: 'desc' },
     Zusage:    { col: 'applicationDate', dir: 'desc' },
   },
   theme:  localStorage.getItem('jt-theme') || 'system',
+  // Persisted settings
+  settings: loadSettings(),
 };
+
+function loadSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-settings') || 'null');
+    const defaults = {
+      weeklyGoal:   5,
+      pushEnabled:  false,   // master toggle — default OFF
+      badgeEnabled: false,   // app badge — default OFF
+      weeklySummary: false,  // weekly digest — default OFF
+      followUpDays: 0,       // auto follow-up after N days (0 = off)
+      staleThreshold: { Offen: 14, Interview: 7, Absage: 0, Zusage: 0 },
+      pushOnStatus:   { Offen: false, Interview: true, Absage: true, Zusage: true },
+    };
+    return stored ? { ...defaults, ...stored } : defaults;
+  } catch { return {}; }
+}
+
+function saveSettings() {
+  localStorage.setItem('jt-settings', JSON.stringify(State.settings));
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function uuid() {
@@ -39,6 +62,10 @@ function fmtDate(iso) {
 }
 function fmtDateTime(iso) {
   if (!iso) return '–';
+  // YYYY-MM-DD strings parse as UTC midnight → adding local time offset shows wrong time
+  // Only show time when there's an actual time component (ISO with 'T')
+  const hasTime = typeof iso === 'string' && iso.includes('T');
+  if (!hasTime) return fmtDate(iso);
   const d = new Date(iso);
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' })
@@ -139,16 +166,19 @@ async function loadAll() {
   State.all = pairs.map(([,v]) => v);
   applyFilters();
   updateCounts();
+  updateBadge(); // refresh badge count whenever data changes
 }
 
 async function saveApp(app) {
   app.updatedAt = nowISO();
   await idbSet(app.id, app, DB);
+  await autoCleanReminder(app);  // auto-delete reminder if Zusage/Absage
   await loadAll();
 }
 
 async function deleteApp(id) {
   await idbDel(id, DB);
+  await deleteReminder(id); // remove any associated reminder
   await loadAll();
   toast('Bewerbung gelöscht', 'info');
 }
@@ -159,8 +189,9 @@ function navigate(tab) {
   document.querySelectorAll('[data-nav]').forEach(el => el.classList.remove('active'));
   document.getElementById(`page-${tab}`)?.classList.add('active');
   document.querySelectorAll(`[data-nav="${tab}"]`).forEach(el => el.classList.add('active'));
-  if (tab === 'dashboard') renderDashboard();
+  if (tab === 'dashboard')    renderDashboard();
   if (tab === 'applications') renderView();
+  if (tab === 'settings')     renderSettingsNotifications();
   lucide.createIcons();
 }
 
@@ -173,7 +204,14 @@ function applyFilters() {
   State.filtered = State.all.filter(a => {
     if (status && a.status !== status) return false;
     if (source && a.source !== source) return false;
-    if (search && !`${a.company} ${a.position} ${a.notes||''}`.toLowerCase().includes(search)) return false;
+    if (search) {
+      const hay = [
+        a.company, a.position, a.source, a.notes,
+        a.rejectionReason, a.contactName, a.contactEmail,
+        a.contactPhone, a.platformLink,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
     return true;
   });
   sortApps();
@@ -235,7 +273,14 @@ function updateSortHeaders() {
 
 function updateSubtitle() {
   const el = document.getElementById('app-subtitle');
-  if (el) el.textContent = `${State.filtered.length} von ${State.all.length} Einträgen`;
+  if (!el) return;
+  if (!State.all.length) {
+    el.textContent = 'Noch keine Einträge';
+  } else if (State.filtered.length === State.all.length) {
+    el.textContent = `${State.all.length} Einträge`;
+  } else {
+    el.textContent = `${State.filtered.length} von ${State.all.length} Einträgen`;
+  }
 }
 
 function populateSourceFilter() {
@@ -360,17 +405,24 @@ async function _applyDrop(id, newStatus) {
 function openForm(id) {
   const app = id ? State.all.find(a => a.id === id) : null;
   document.getElementById('form-title').textContent = app ? 'Bearbeiten' : 'Neue Bewerbung';
-  document.getElementById('f-id').value       = app?.id || '';
-  document.getElementById('f-company').value  = app?.company || '';
-  document.getElementById('f-position').value = app?.position || '';
-  document.getElementById('f-status').value   = app?.status || 'Offen';
-  document.getElementById('f-source').value   = app?.source || '';
-  document.getElementById('f-salary').value   = app?.expectedSalary || '';
-  document.getElementById('f-date').value     = app?.applicationDate?.slice(0,10) || new Date().toISOString().slice(0,10);
-  document.getElementById('f-platform').value = app?.platformLink || '';
-  document.getElementById('f-docs').value     = app?.documentLink || '';
-  document.getElementById('f-rejection').value= app?.rejectionReason || '';
-  document.getElementById('f-notes').value    = app?.notes || '';
+  document.getElementById('f-id').value        = app?.id || '';
+  document.getElementById('f-company').value   = app?.company || '';
+  document.getElementById('f-position').value  = app?.position || '';
+  document.getElementById('f-status').value    = app?.status || 'Offen';
+  document.getElementById('f-source').value    = app?.source || '';
+  document.getElementById('f-salary').value    = app?.expectedSalary || '';
+  document.getElementById('f-date').value      = app?.applicationDate?.slice(0,10) || new Date().toISOString().slice(0,10);
+  document.getElementById('f-platform').value  = app?.platformLink || '';
+  document.getElementById('f-docs').value      = app?.documentLink || '';
+  document.getElementById('f-rejection').value = app?.rejectionReason || '';
+  document.getElementById('f-contact-name').value  = app?.contactName || '';
+  document.getElementById('f-contact-phone').value = app?.contactPhone || '';
+  document.getElementById('f-contact-email').value = app?.contactEmail || '';
+  document.getElementById('f-notes').value     = app?.notes || '';
+  const noteField = document.getElementById('f-history-note');
+  if (noteField) noteField.value = '';
+  // Show history note field only when editing (existing entry)
+  document.getElementById('f-history-note-group')?.classList.toggle('hidden', !app);
   toggleRejectionField();
   showModal('form-modal');
   setTimeout(() => document.getElementById('f-company').focus(), 220);
@@ -388,15 +440,41 @@ async function submitForm(e) {
   const id = document.getElementById('f-id').value || uuid();
   const existing = State.all.find(a => a.id === id);
   const newStatus = document.getElementById('f-status').value;
+  const company   = document.getElementById('f-company').value.trim();
+  const position  = document.getElementById('f-position').value.trim();
+
+  // Duplicate check: same company + position already exists (different id)
+  if (!existing) {
+    const dupe = State.all.find(a =>
+      a.company.toLowerCase() === company.toLowerCase() &&
+      a.position.toLowerCase() === position.toLowerCase()
+    );
+    if (dupe) {
+      const ok = await showConfirm(
+        'Mögliches Duplikat',
+        `Du hast bereits eine Bewerbung bei „${dupe.company}" als „${dupe.position}" erfasst.\n\nTrotzdem speichern?`,
+        'Ja, speichern', 'primary'
+      );
+      if (!ok) return;
+    }
+  }
+
   const history = existing?.history ? [...existing.history] : [];
   const lastStatus = history.length ? history[history.length-1].status : null;
-  if (!existing) history.push({ status: newStatus, timestamp: nowISO() });
-  else if (lastStatus !== newStatus) history.push({ status: newStatus, timestamp: nowISO() });
+  const historyNote = document.getElementById('f-history-note')?.value.trim() || '';
+  if (!existing) {
+    history.push({ status: newStatus, timestamp: nowISO(), note: historyNote || undefined });
+  } else if (lastStatus !== newStatus) {
+    history.push({ status: newStatus, timestamp: nowISO(), note: historyNote || undefined });
+  } else if (historyNote && history.length) {
+    // Same status but user added a note → append note to last entry
+    history[history.length - 1] = { ...history[history.length - 1], note: historyNote };
+  }
 
   const app = {
     id,
-    company:         document.getElementById('f-company').value.trim(),
-    position:        document.getElementById('f-position').value.trim(),
+    company,
+    position,
     status:          newStatus,
     source:          document.getElementById('f-source').value.trim(),
     expectedSalary:  Number(document.getElementById('f-salary').value) || null,
@@ -404,11 +482,20 @@ async function submitForm(e) {
     platformLink:    document.getElementById('f-platform').value.trim(),
     documentLink:    document.getElementById('f-docs').value.trim(),
     rejectionReason: document.getElementById('f-rejection').value.trim(),
+    contactName:     document.getElementById('f-contact-name').value.trim(),
+    contactPhone:    document.getElementById('f-contact-phone').value.trim(),
+    contactEmail:    document.getElementById('f-contact-email').value.trim(),
     notes:           document.getElementById('f-notes').value.trim(),
     history,
     createdAt:  existing?.createdAt || nowISO(),
     updatedAt:  nowISO(),
   };
+
+  // Fire push notification if status changed to a tracked status
+  if (existing && lastStatus !== newStatus) {
+    schedulePushIfEnabled(app, newStatus);
+  }
+
   await saveApp(app);
   closeForm();
   toast(existing ? 'Aktualisiert ✓' : 'Gespeichert ✓', 'success');
@@ -422,19 +509,66 @@ function openDetail(id) {
   document.getElementById('d-company').textContent  = a.company;
   document.getElementById('d-position').textContent = a.position;
 
+  // Research buttons — set onclick with current data
+  const btnEmployer = document.getElementById('d-research-employer');
+  const btnSalary   = document.getElementById('d-research-salary');
+  if (btnEmployer) btnEmployer.onclick = (e) => { e.stopPropagation(); searchEmployer(a.company); };
+  if (btnSalary)   btnSalary.onclick   = (e) => { e.stopPropagation(); searchSalary(a.position, a.source); };
+
+  // Bell — manual reminder
+  const btnBell = document.getElementById('d-bell-btn');
+  if (btnBell) {
+    btnBell.onclick = (e) => { e.stopPropagation(); openReminderModal(id); };
+    // Show filled bell if reminder exists
+    getReminder(id).then(r => {
+      if (btnBell && r) btnBell.style.color = 'var(--accent)';
+      else if (btnBell) btnBell.style.color = '';
+    });
+  }
+
   const badge = document.getElementById('d-status-badge');
   badge.textContent = a.status;
   badge.className   = `badge ${statusClass(a.status)}`;
 
-  // Reminder
-  const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-  document.getElementById('d-reminder').classList.toggle('hidden', !(a.status === 'Offen' && daysSince(lastTs) > 14));
+  // Reminder — settings-based threshold per status
+  const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
+  const threshold = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+  const isStale   = threshold > 0 && daysSince(lastTs) > threshold;
+  const remEl     = document.getElementById('d-reminder');
+  if (remEl) {
+    remEl.classList.toggle('hidden', !isStale);
+    if (isStale) remEl.innerHTML = `
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      ${daysSince(lastTs)} Tage keine Änderung`;
+  }
 
   // Details
   document.getElementById('d-source').textContent    = a.source || '–';
   document.getElementById('d-date').textContent      = fmtDateTime(a.applicationDate);
   document.getElementById('d-salary').textContent    = fmtEuro(a.expectedSalary);
   document.getElementById('d-rejection').textContent = a.rejectionReason || '–';
+
+  // Contact
+  const contactSec = document.getElementById('d-contact-section');
+  if (a.contactName || a.contactPhone || a.contactEmail) {
+    contactSec.classList.remove('hidden');
+    document.getElementById('d-contact-name').textContent  = a.contactName  || '–';
+    document.getElementById('d-contact-phone').textContent = a.contactPhone || '–';
+    document.getElementById('d-contact-email').textContent = a.contactEmail || '–';
+    // Make phone/email clickable
+    const ph = document.getElementById('d-contact-phone');
+    if (a.contactPhone) ph.innerHTML = `<a href="tel:${escAttr(a.contactPhone)}" style="color:var(--accent)">${escHtml(a.contactPhone)}</a>`;
+    const em = document.getElementById('d-contact-email');
+    if (a.contactEmail) em.innerHTML = `<a href="mailto:${escAttr(a.contactEmail)}" style="color:var(--accent)">${escHtml(a.contactEmail)}</a>`;
+  } else {
+    contactSec.classList.add('hidden');
+  }
+
+  // Quick status button
+  const statusBtn = document.getElementById('d-status-btn');
+  if (statusBtn) {
+    statusBtn.onclick = (e) => showStatusMenu(e, id);
+  }
 
   // Links
   const linksEl = document.getElementById('d-links');
@@ -468,6 +602,7 @@ function openDetail(id) {
         <div class="timeline-content">
           <div class="timeline-status">${escHtml(h.status)}</div>
           <div class="timeline-ts">${fmtDateTime(h.timestamp)}</div>
+          ${h.note ? `<div class="timeline-note">${escHtml(h.note)}</div>` : ''}
         </div>
       </div>`).join('');
   }
@@ -480,6 +615,24 @@ function openDetail(id) {
 }
 function closeDetail() { hideModal('detail-modal'); }
 
+// ─── Contextual Deep-Link Research ────────────────────────────────────────────
+function searchEmployer(company) {
+  if (!company) return;
+  const q   = `${company} als Arbeitgeber`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function searchSalary(position, source) {
+  if (!position) return;
+  // Use source as a city/location hint if it looks like a location, otherwise omit
+  const city = source && !/linkedin|indeed|xing|stepstone|monster|glassdoor|http/i.test(source)
+    ? source : '';
+  const q   = `Gehalt ${position} Durchschnitt${city ? ' ' + city : ''}`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function confirmDelete(id) {
   const a = State.all.find(x => x.id === id);
   if (!a) return;
@@ -489,6 +642,51 @@ async function confirmDelete(id) {
     'Löschen', 'danger'
   );
   if (ok) deleteApp(id);
+}
+
+// ─── Quick Status Change ───────────────────────────────────────────────────────
+function showStatusMenu(e, id) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-popover').forEach(p => p.remove());
+  const STATUSES = ['Offen','Interview','Absage','Zusage'];
+  const a = State.all.find(x => x.id === id);
+  if (!a) return;
+
+  const popover = document.createElement('div');
+  popover.className = 'sort-popover status-popover';
+  const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  popover.innerHTML = STATUSES.map(s => {
+    const isActive = s === a.status;
+    return `<div class="sort-popover-item${isActive?' active':''}" onclick="applyQuickStatus('${id}','${s}')">
+      <span style="width:16px;flex-shrink:0;opacity:${isActive?1:0}">${SVG_CHECK}</span>
+      <span class="badge ${statusClass(s)}" style="font-size:.65rem;padding:.1rem .45rem">${s}</span>
+    </div>`;
+  }).join('');
+
+  // Find or create a positioned wrapper around the trigger button
+  const btn = e.currentTarget;
+  let anchor = btn.closest('[data-status-anchor]');
+  if (!anchor) {
+    // Wrap btn in a relative container if not already wrapped
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-status-anchor', '');
+    wrapper.style.cssText = 'position:relative;display:inline-flex;';
+    btn.parentNode.insertBefore(wrapper, btn);
+    wrapper.appendChild(btn);
+    anchor = wrapper;
+  }
+  anchor.appendChild(popover);
+
+  // Close on outside click
+  setTimeout(() => {
+    const close = (ev) => {
+      if (!anchor.contains(ev.target)) {
+        popover.remove();
+        document.removeEventListener('click', close, true);
+      }
+    };
+    document.addEventListener('click', close, true);
+  }, 0);
 }
 
 // ─── Custom Confirm Dialog (replaces window.confirm – works in iOS PWA) ───────
@@ -556,6 +754,89 @@ async function exportData() {
   toast(`${data.length} Einträge exportiert`, 'success');
 }
 
+async function exportCSV() {
+  const pairs = await idbEntries(DB);
+  const data  = pairs.map(([,v]) => v);
+  if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
+
+  const cols = ['Firma','Position','Status','Quelle','Datum','Gehalt','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = data.map(a => [
+    esc(a.company), esc(a.position), esc(a.status), esc(a.source),
+    esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.rejectionReason),
+    esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
+    esc(a.platformLink), esc(a.documentLink), esc(a.notes),
+  ].join(';'));
+
+  const csv  = '\uFEFF' + [cols.join(';'), ...rows].join('\r\n'); // BOM for Excel
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const el   = document.createElement('a');
+  el.href = url; el.download = `jobtracker-${new Date().toISOString().slice(0,10)}.csv`;
+  el.click(); URL.revokeObjectURL(url);
+  toast(`${data.length} Einträge als CSV exportiert`, 'success');
+}
+
+async function importCSV(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text  = await file.text();
+    // Strip BOM, split lines
+    const clean = text.replace(/^\uFEFF/, '');
+    const lines = clean.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) throw new Error('Keine Daten gefunden');
+
+    const header = lines[0].split(';').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    const colMap = {
+      firma:'company', position:'position', status:'status', quelle:'source',
+      datum:'applicationDate', gehalt:'expectedSalary', absagegrund:'rejectionReason',
+      ansprechpartner:'contactName', telefon:'contactPhone', 'e-mail':'contactEmail',
+      stellenanzeige:'platformLink', unterlagen:'documentLink', notizen:'notes',
+    };
+
+    const parseCSVLine = (line) => {
+      const result = []; let cur = ''; let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && !inQ) { inQ = true; }
+        else if (ch === '"' && inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else if (ch === '"' && inQ) { inQ = false; }
+        else if (ch === ';' && !inQ) { result.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      result.push(cur);
+      return result;
+    };
+
+    const imported = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = parseCSVLine(lines[i]);
+      const app  = { id: uuid(), createdAt: nowISO(), updatedAt: nowISO(), history: [] };
+      header.forEach((h, idx) => {
+        const field = colMap[h];
+        if (!field) return;
+        let val = vals[idx] ?? '';
+        if (field === 'expectedSalary') val = Number(val.replace(/[^0-9]/g,'')) || null;
+        else val = val.trim() || null;
+        app[field] = val;
+      });
+      if (!app.company) continue;
+      app.status = app.status || 'Offen';
+      app.history.push({ status: app.status, timestamp: nowISO() });
+      imported.push(app);
+    }
+    if (!imported.length) throw new Error('Keine gültigen Zeilen gefunden');
+    await idbClear(DB);
+    for (const app of imported) await idbSet(app.id, app, DB);
+    await loadAll();
+    toast(`${imported.length} Einträge aus CSV importiert ✓`, 'success');
+  } catch (err) {
+    toast('CSV-Import fehlgeschlagen: ' + err.message, 'error');
+  }
+  e.target.value = '';
+}
+
 async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -576,14 +857,323 @@ async function importData(e) {
 async function clearAllData() {
   const ok = await showConfirm(
     'Alle Daten löschen?',
-    'Alle Bewerbungen werden unwiderruflich entfernt. Diese Aktion kann nicht rückgängig gemacht werden.',
+    'Alle Bewerbungen und Erinnerungen werden unwiderruflich entfernt.',
     'Löschen', 'danger'
   );
   if (!ok) return;
   await idbClear(DB);
+  await idbClear(REMINDERS);
   await loadAll();
   toast('Alle Daten gelöscht', 'info');
 }
+
+// ─── Notification & Reminder Engine ─────────────────────────────────────────
+// Core principle: User in Control. All notifications default OFF.
+
+function notifSupported() { return 'Notification' in window; }
+function notifPermission() { return notifSupported() ? Notification.permission : 'denied'; }
+function isPushActive()    { return State.settings.pushEnabled && notifPermission() === 'granted'; }
+
+async function requestPushPermission() {
+  if (!notifSupported()) { toast('Dein Browser unterstützt keine Benachrichtigungen.', 'warning'); return false; }
+  const perm = notifPermission();
+  if (perm === 'denied') {
+    toast('Benachrichtigungen in Systemeinstellungen blockiert – dort freigeben.', 'warning');
+    renderSettingsNotifications(); return false;
+  }
+  if (perm === 'granted') {
+    State.settings.pushEnabled = true; saveSettings(); renderSettingsNotifications(); updateBadge(); return true;
+  }
+  const result = await Notification.requestPermission();
+  if (result === 'granted') {
+    State.settings.pushEnabled = true; saveSettings(); renderSettingsNotifications(); updateBadge();
+    toast('Benachrichtigungen aktiviert ✓', 'success'); return true;
+  }
+  State.settings.pushEnabled = false; saveSettings(); renderSettingsNotifications();
+  toast('Erlaubnis abgelehnt.', 'warning'); return false;
+}
+
+async function toggleMasterPush(enabled) {
+  if (enabled) {
+    await requestPushPermission();
+  } else {
+    State.settings.pushEnabled = false; saveSettings(); renderSettingsNotifications(); updateBadge();
+    toast('Benachrichtigungen deaktiviert', 'info');
+  }
+}
+
+function fireNotification(title, body, tag, appId) {
+  if (!isPushActive()) return;
+  const payload = {
+    title, body,
+    tag:   tag   || 'jt',
+    icon:  '/icons/icon-192.png',
+    badge: '/icons/icon-96.png',
+    data:  { appId, url: '/' },
+  };
+  try {
+    const ctrl = navigator.serviceWorker?.controller;
+    if (ctrl) {
+      ctrl.postMessage({ type: 'SHOW_NOTIFICATION', ...payload });
+    } else {
+      // Fallback: direct Notification API (SW not yet active / first load)
+      new Notification(title, { body, icon: payload.icon, tag: payload.tag });
+    }
+  } catch { /* SW unavailable – silently skip */ }
+}
+
+function schedulePushIfEnabled(app, newStatus) {
+  if (!isPushActive() || !State.settings.pushOnStatus?.[newStatus]) return;
+  const titles = { Interview: `🎯 Interview bei ${app.company}`, Zusage: `🎉 Zusage von ${app.company}!`, Absage: `📭 Absage von ${app.company}`, Offen: `📋 Zurückgesetzt: ${app.company}` };
+  fireNotification(titles[newStatus] || `Status: ${newStatus}`, app.position, `status-${app.id}`, app.id);
+}
+
+// ── Badge ──────────────────────────────────────────────────────────────────────
+async function updateBadge() {
+  if (!('setAppBadge' in navigator)) return;
+  if (!State.settings.badgeEnabled) { navigator.clearAppBadge?.(); return; }
+  const count = await countDueBadgeItems();
+  count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge?.();
+}
+
+async function countDueBadgeItems() {
+  let count = 0;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Manual reminders due today or overdue
+  try {
+    const p = await idbEntries(REMINDERS);
+    count += p.filter(([, r]) => r.date <= today).length;
+  } catch {}
+
+  // Stale apps per threshold
+  const thr = State.settings.staleThreshold || {};
+  const followUpDays = State.settings.followUpDays || 0;
+  State.all.forEach(app => {
+    const lastTs  = app.history?.slice(-1)[0]?.timestamp || app.applicationDate;
+    const days    = daysSince(lastTs);
+    const t       = thr[app.status];
+    if (t && days >= t) count++;
+    // Follow-up due
+    if (followUpDays > 0 && ['Offen', 'Interview'].includes(app.status) && days >= followUpDays) count++;
+  });
+  return count;
+}
+
+// ── Stale Checker + Follow-Up ─────────────────────────────────────────────────
+function checkStaleReminders() {
+  if (!isPushActive()) { updateBadge(); return; }
+  const thr = State.settings.staleThreshold || {};
+  const followUpDays = State.settings.followUpDays || 0;
+  const today = new Date().toISOString().slice(0, 10);
+
+  State.all.forEach(app => {
+    const lastTs    = app.history?.slice(-1)[0]?.timestamp || app.applicationDate;
+    const daysSt    = daysSince(lastTs);
+
+    // Per-status inactivity threshold
+    const threshold = thr[app.status];
+    if (threshold && daysSt >= threshold) {
+      const key = `jt-stale-${app.id}`;
+      if (localStorage.getItem(key) !== today) {
+        localStorage.setItem(key, today);
+        fireNotification(
+          `⏰ Nachfassen: ${app.company}`,
+          `„${app.position}" — ${daysSt} Tage im Status ${app.status}`,
+          `stale-${app.id}`, app.id
+        );
+      }
+    }
+
+    // Global follow-up: fires for Offen/Interview if no response in followUpDays
+    if (followUpDays > 0 && ['Offen', 'Interview'].includes(app.status) && daysSt >= followUpDays) {
+      const fuKey = `jt-followup-${app.id}`;
+      if (localStorage.getItem(fuKey) !== today) {
+        localStorage.setItem(fuKey, today);
+        fireNotification(
+          `📬 Nachfassen empfohlen: ${app.company}`,
+          `${app.position} — seit ${daysSt} Tagen keine Reaktion`,
+          `followup-${app.id}`, app.id
+        );
+      }
+    }
+  });
+  updateBadge();
+}
+
+// ── Manual Reminder Queue ──────────────────────────────────────────────────────
+async function saveReminder(appId, date, note) {
+  await idbSet(`reminder-${appId}`, { id: `reminder-${appId}`, appId, date, note: note || '' }, REMINDERS);
+  updateBadge();
+}
+async function deleteReminder(appId) {
+  try { await idbDel(`reminder-${appId}`, REMINDERS); } catch {}
+  updateBadge();
+}
+async function getReminder(appId) { try { return await idbGet(`reminder-${appId}`, REMINDERS); } catch { return null; } }
+
+async function autoCleanReminder(app) {
+  if (['Zusage', 'Absage'].includes(app.status)) await deleteReminder(app.id);
+}
+
+async function checkManualReminders() {
+  if (!isPushActive()) return;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const pairs = await idbEntries(REMINDERS);
+    for (const [, r] of pairs) {
+      if (r.date > today) continue;
+      const fk = `jt-rem-fired-${r.id}-${today}`;
+      if (localStorage.getItem(fk)) continue;
+      localStorage.setItem(fk, '1');
+      const app = State.all.find(a => a.id === r.appId);
+      if (!app) { await deleteReminder(r.appId); continue; }
+      fireNotification(`🔔 Erinnerung: ${app.company}`, r.note || `${app.position} — geplant für heute`, `reminder-${r.id}`, r.appId);
+    }
+  } catch {}
+  updateBadge();
+}
+
+// ── Weekly Summary ─────────────────────────────────────────────────────────────
+function checkWeeklySummary() {
+  if (!isPushActive() || !State.settings.weeklySummary) return;
+  const key = 'jt-weekly-summary'; const today = new Date().toISOString().slice(0, 10);
+  if (new Date().getDay() !== 1 || localStorage.getItem(key) === today) return;
+  localStorage.setItem(key, today);
+  const offene = State.all.filter(a => a.status === 'Offen').length;
+  const interviews = State.all.filter(a => a.status === 'Interview').length;
+  fireNotification('📋 Wöchentliche Zusammenfassung', `${State.all.length} Bewerbungen · ${offene} offen · ${interviews} im Interview`, 'weekly-summary');
+}
+
+// ── Bell / Reminder Modal ──────────────────────────────────────────────────────
+async function openReminderModal(appId) {
+  if (!isPushActive()) {
+    const ok = await showConfirm('Benachrichtigungen nicht aktiv', 'Bitte aktiviere zuerst Benachrichtigungen in den Einstellungen.', 'Zu den Einstellungen', 'primary');
+    if (ok) navigate('settings');
+    return;
+  }
+  const existing = await getReminder(appId);
+  const modal = document.getElementById('reminder-modal');
+  if (!modal) return;
+  document.getElementById('reminder-date').value = existing?.date || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  document.getElementById('reminder-note').value = existing?.note || '';
+  document.getElementById('reminder-delete-btn').style.display = existing ? '' : 'none';
+  modal.dataset.appId = appId;
+  showModal('reminder-modal');
+}
+
+async function saveReminderFromModal() {
+  const modal = document.getElementById('reminder-modal');
+  const appId = modal?.dataset.appId;
+  const date  = document.getElementById('reminder-date')?.value;
+  const note  = document.getElementById('reminder-note')?.value.trim();
+  if (!appId || !date) return;
+  await saveReminder(appId, date, note);
+  hideModal('reminder-modal');
+  toast('Erinnerung gespeichert ✓', 'success');
+}
+
+async function deleteReminderFromModal() {
+  const appId = document.getElementById('reminder-modal')?.dataset.appId;
+  if (!appId) return;
+  await deleteReminder(appId);
+  hideModal('reminder-modal');
+  toast('Erinnerung gelöscht', 'info');
+}
+
+// ── Settings UI ───────────────────────────────────────────────────────────────
+function updatePushSetting(key, value) {
+  if (key === 'pushOnStatus') {
+    if (!State.settings.pushOnStatus) State.settings.pushOnStatus = {};
+    State.settings.pushOnStatus[value.status] = value.checked;
+  } else if (key === 'staleThreshold') {
+    if (!State.settings.staleThreshold) State.settings.staleThreshold = {};
+    State.settings.staleThreshold[value.status] = Number(value.days);
+  } else { State.settings[key] = value; }
+  saveSettings();
+  if (key === 'badgeEnabled') updateBadge();
+}
+
+function renderSettingsNotifications() {
+  const el = document.getElementById('notif-settings-body');
+  if (!el) return;
+  const supported = notifSupported();
+  const perm      = notifPermission();
+  const granted   = perm === 'granted';
+  const denied    = perm === 'denied';
+  const masterOn  = State.settings.pushEnabled && granted;
+
+  const STATUSES = [
+    { key: 'Interview', label: 'Interview', icon: '🎯', cls: 'badge-interview' },
+    { key: 'Zusage',    label: 'Zusage',    icon: '🎉', cls: 'badge-zusage'    },
+    { key: 'Absage',    label: 'Absage',    icon: '📭', cls: 'badge-absage'    },
+    { key: 'Offen',     label: 'Offen',     icon: '📋', cls: 'badge-open'      },
+  ];
+
+  const permBanner = !supported
+    ? `<div class="notif-banner notif-banner--warn">Dein Browser unterstützt keine Benachrichtigungen.</div>`
+    : denied
+    ? `<div class="notif-banner notif-banner--denied">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Blockiert in Systemeinstellungen. Einstellungen → Apps → JobTracker → Benachrichtigungen aktivieren.
+      </div>` : '';
+
+  el.innerHTML = `
+    ${permBanner}
+    <label class="notif-master-row">
+      <div class="notif-master-info">
+        <div class="notif-master-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Benachrichtigungen
+        </div>
+        <div class="notif-master-sub">${!supported ? 'Nicht unterstützt' : denied ? 'Blockiert – in Systemeinstellungen freigeben' : granted ? (masterOn ? 'Aktiv' : 'Erlaubt, aber deaktiviert') : 'Erlaubnis noch nicht erteilt'}</div>
+      </div>
+      <input type="checkbox" class="toggle" ${masterOn ? 'checked' : ''} ${(!supported || denied) ? 'disabled' : ''} onchange="toggleMasterPush(this.checked)" />
+    </label>
+    ${masterOn ? `
+    <div class="notif-section-divider"></div>
+    <div class="notif-feature-group">
+      <div class="notif-feature-label">Automatisch</div>
+      <label class="notif-row">
+        <div class="notif-row-info"><span>📊 Wöchentliche Zusammenfassung</span><span class="notif-row-sub">Jeden Montag morgen</span></div>
+        <input type="checkbox" class="toggle" ${State.settings.weeklySummary ? 'checked' : ''} onchange="updatePushSetting('weeklySummary', this.checked)" />
+      </label>
+      <div class="notif-row">
+        <div class="notif-row-info"><span>⏰ Nachfassen nach</span><span class="notif-row-sub">Tage ohne Reaktion (0 = aus)</span></div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <input type="number" class="form-input" min="0" max="60" style="width:56px;text-align:center;padding:.3rem .4rem;font-size:.82rem" value="${State.settings.followUpDays || 0}" onchange="updatePushSetting('followUpDays', Number(this.value))" />
+          <span style="font-size:.78rem;color:var(--text-muted);white-space:nowrap">Tage</span>
+        </div>
+      </div>
+      <label class="notif-row">
+        <div class="notif-row-info"><span>🔢 Badge am App-Icon</span><span class="notif-row-sub">Zahl für fällige Aktionen</span></div>
+        <input type="checkbox" class="toggle" ${State.settings.badgeEnabled ? 'checked' : ''} onchange="updatePushSetting('badgeEnabled', this.checked)" />
+      </label>
+    </div>
+    <div class="notif-section-divider"></div>
+    <div class="notif-feature-group">
+      <div class="notif-feature-label">Bei Status-Wechsel zu</div>
+      ${STATUSES.map(s => `
+        <label class="notif-row">
+          <div style="display:flex;align-items:center;gap:8px"><span>${s.icon}</span><span class="badge ${s.cls}" style="font-size:.7rem">${s.label}</span></div>
+          <input type="checkbox" class="toggle" ${State.settings.pushOnStatus?.[s.key] ? 'checked' : ''} onchange="updatePushSetting('pushOnStatus',{status:'${s.key}',checked:this.checked})" />
+        </label>`).join('')}
+    </div>
+    <div class="notif-section-divider"></div>
+    <div class="notif-feature-group">
+      <div class="notif-feature-label">Erinnerung nach Inaktivität (0 = aus)</div>
+      ${STATUSES.map(s => `
+        <div class="notif-row">
+          <div style="display:flex;align-items:center;gap:8px"><span>${s.icon}</span><span class="badge ${s.cls}" style="font-size:.7rem">${s.label}</span></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <input type="number" class="form-input" min="0" max="90" style="width:56px;text-align:center;padding:.3rem .4rem;font-size:.82rem" value="${State.settings.staleThreshold?.[s.key] ?? 0}" onchange="updatePushSetting('staleThreshold',{status:'${s.key}',days:this.value})" />
+            <span style="font-size:.78rem;color:var(--text-muted)">Tage</span>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+  `;
+}
+
 
 // ─── Google Drive Sync ────────────────────────────────────────────────────────
 // Fill in your credentials from https://console.cloud.google.com/
@@ -905,17 +1495,34 @@ document.addEventListener('touchmove', e => {
   }
 }, { passive: false });
 
-// ─── PWA Install Prompt ───────────────────────────────────────────────────────
+function updateWeeklyGoal(n) {
+  State.settings.weeklyGoal = Math.max(1, Math.min(50, Number(n) || 5));
+  saveSettings();
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboard();
+}
+
+// ─── applyQuickStatus also fires push ─────────────────────────────────────────
+async function applyQuickStatus(id, newStatus) {
+  document.querySelectorAll('.status-popover').forEach(p => p.remove());
+  const app = State.all.find(a => a.id === id);
+  if (!app || app.status === newStatus) return;
+  const oldStatus = app.status;
+  app.status  = newStatus;
+  app.history = [...(app.history || []), { status: newStatus, timestamp: nowISO() }];
+  if (oldStatus !== newStatus) schedulePushIfEnabled(app, newStatus);
+  await saveApp(app);
+  toast(`Status → ${newStatus}`, 'success');
+  if (!document.getElementById('detail-modal').classList.contains('hidden')) {
+    openDetail(id);
+  }
+}
 let _deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _deferredInstallPrompt = e;
-  // Show our custom banner after a short delay
-  setTimeout(showInstallBanner, 2000);
 });
 
 function showInstallBanner() {
-  // Don't show if already installed
   if (window.matchMedia('(display-mode: standalone)').matches) return;
   if (localStorage.getItem('jt-install-dismissed')) return;
   const el = document.getElementById('install-banner');
@@ -938,21 +1545,36 @@ function dismissInstallBanner() {
   if (el) { el.classList.remove('visible'); setTimeout(() => el.classList.add('hidden'), 400); }
 }
 
-function showIOSInstallModal() {
-  showModal('ios-install-modal');
+// Show install modal once on first ever visit (not standalone, not already dismissed)
+function _maybeShowInstallModal() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+  if (isStandalone) return;
+  if (localStorage.getItem('jt-install-dismissed')) return;
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  // On iOS: show instruction modal directly (no beforeinstallprompt available)
+  if (isIOS) {
+    setTimeout(() => showModal('ios-install-modal'), 1800);
+    return;
+  }
+
+  // On Android/Chrome: show banner once beforeinstallprompt fires (or after delay)
+  const showBanner = () => {
+    if (!localStorage.getItem('jt-install-dismissed')) showInstallBanner();
+  };
+  if (_deferredInstallPrompt) {
+    showBanner();
+  } else {
+    window.addEventListener('beforeinstallprompt', showBanner, { once: true });
+  }
 }
 
-// On iOS (no beforeinstallprompt), show manual instructions after first visit
-window.addEventListener('load', () => {
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-  if (isIOS && !isStandalone && !localStorage.getItem('jt-install-dismissed')) {
-    setTimeout(() => {
-      const el = document.getElementById('install-banner');
-      if (el) { el.classList.remove('hidden'); el.classList.add('visible'); }
-    }, 2500);
-  }
-});
+function dismissInstallModal() {
+  localStorage.setItem('jt-install-dismissed', '1');
+  hideModal('ios-install-modal');
+}
 
 // ─── Virtual Keyboard: scroll focused input into view ─────────────────────────
 // On iOS/Android the virtual keyboard shrinks the viewport but doesn't fire resize.
@@ -1020,5 +1642,14 @@ if ('serviceWorker' in navigator) {
   navigate('dashboard');
   await checkPersistence();
   handleShareTarget();
+  renderSettingsNotifications();
   lucide.createIcons();
+  // Show install prompt once on first visit
+  setTimeout(_maybeShowInstallModal, 1500);
+  // Stale reminder check
+  checkStaleReminders();
+  checkManualReminders();
+  checkWeeklySummary();
+  setInterval(checkStaleReminders, 60 * 60 * 1000);
+  setInterval(checkManualReminders, 60 * 60 * 1000);
 })();

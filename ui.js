@@ -29,8 +29,6 @@ function renderDashboard() {
   const zusagen    = apps.filter(a => a.status === 'Zusage').length;
   const offene     = apps.filter(a => a.status === 'Offen').length;
   const absagen    = apps.filter(a => a.status === 'Absage').length;
-
-  // Interview-Rate: (interviews + zusagen) / total — how many got a response worth tracking
   const interviewRate = total ? Math.round(((interviews + zusagen) / total) * 100) : 0;
 
   const responseTimes = apps
@@ -44,18 +42,55 @@ function renderDashboard() {
     ? Math.round(responseTimes.reduce((a,b)=>a+b,0) / responseTimes.length)
     : null;
 
+  // ── Weekly goal progress ─────────────────────────────────────────────────
+  const goal = State.settings.weeklyGoal || 5;
+  const now  = new Date();
+  const dayOfWeek = now.getDay() || 7; // Mon=1…Sun=7
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - dayOfWeek + 1);
+  weekStart.setHours(0, 0, 0, 0);
+  const thisWeek = apps.filter(a => {
+    const d = new Date(a.applicationDate);
+    return d >= weekStart;
+  }).length;
+  const pct  = Math.min(100, Math.round((thisWeek / goal) * 100));
+  const done = thisWeek >= goal;
+
+  const goalEl = document.getElementById('goal-progress');
+  if (goalEl) {
+    goalEl.innerHTML = `
+      <div class="goal-header">
+        <div class="goal-label">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Wochenziel
+        </div>
+        <div class="goal-value">
+          <span style="font-weight:700;color:${done?'var(--status-acc-fg)':'var(--text-primary)'}">${thisWeek}</span>
+          <span style="color:var(--text-muted)">/ ${goal}</span>
+          <button class="goal-edit-btn" onclick="openGoalEditor()" title="Ziel anpassen">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="goal-bar-track">
+        <div class="goal-bar-fill${done?' goal-bar-done':''}" style="width:${pct}%"></div>
+      </div>
+      <div class="goal-sub">${done ? '🎉 Ziel diese Woche erreicht!' : `Noch ${goal - thisWeek} Bewerbung${goal - thisWeek !== 1 ? 'en' : ''} bis zum Ziel`}</div>
+    `;
+  }
+
   // KPI Cards
   document.getElementById('kpi-grid').innerHTML = [
-    { label:'Gesamt',        value: total,
+    { label:'Gesamt',         value: total,
       sub: `${offene} offen · ${absagen} Absage${absagen!==1?'n':''}`,
       icon:'file-text',   color:'#6366f1', bg:'rgba(99,102,241,.1)' },
     { label:'Interview-Rate', value: interviewRate+'%',
       sub: `${interviews + zusagen} von ${total} erreichten`,
       icon:'trending-up', color:'#22c55e', bg:'rgba(34,197,94,.1)'  },
-    { label:'Interviews',    value: interviews,
+    { label:'Interviews',     value: interviews,
       sub: `${zusagen} Zusage${zusagen!==1?'n':''}`,
       icon:'users',       color:'#f59e0b', bg:'rgba(245,158,11,.1)' },
-    { label:'Ø Antwort',    value: avgResponse !== null ? avgResponse+'d' : '–',
+    { label:'Ø Antwort',     value: avgResponse !== null ? avgResponse+'d' : '–',
       sub:'bis 1. Statuswechsel',
       icon:'clock',       color:'#ec4899', bg:'rgba(236,72,153,.1)' },
   ].map(k => `
@@ -86,6 +121,22 @@ function renderDashboard() {
 
   lucide.createIcons();
   renderCharts();
+}
+
+function openGoalEditor() {
+  const cur = State.settings.weeklyGoal || 5;
+  const el  = document.getElementById('goal-editor');
+  if (!el) return;
+  el.classList.toggle('hidden');
+  const inp = document.getElementById('goal-input');
+  if (inp) { inp.value = cur; inp.focus(); inp.select(); }
+}
+
+function saveGoalEditor() {
+  const val = Number(document.getElementById('goal-input')?.value) || 5;
+  updateWeeklyGoal(val);
+  document.getElementById('goal-editor')?.classList.add('hidden');
+  toast(`Wochenziel: ${Math.max(1,Math.min(50,val))} Bewerbungen ✓`, 'success');
 }
 
 function renderCharts() {
@@ -166,11 +217,12 @@ function renderCharts() {
   const srcMap = {};
   apps.forEach(a => {
     const s = a.source || 'Unbekannt';
-    if (!srcMap[s]) srcMap[s] = { interview:0, zusage:0 };
+    if (!srcMap[s]) srcMap[s] = { total:0, interview:0, zusage:0 };
+    srcMap[s].total++;
     if (a.status === 'Interview') srcMap[s].interview++;
-    if (a.status === 'Zusage')    srcMap[s].zusage++;
+    if (a.status === 'Zusage')    { srcMap[s].interview++; srcMap[s].zusage++; } // Zusage counts as interview too
   });
-  const srcLabels   = Object.keys(srcMap);
+  const srcLabels = Object.keys(srcMap);
   destroyChart('source');
   const sCtx = document.getElementById('chart-source')?.getContext('2d');
   if (sCtx) {
@@ -182,8 +234,8 @@ function renderCharts() {
         data: {
           labels: srcLabels,
           datasets: [
-            { label:'Interviews', data: srcLabels.map(s=>srcMap[s].interview), backgroundColor: isDark()?'rgba(251,191,36,.7)':'rgba(245,158,11,.75)', borderRadius: 4, borderSkipped: false },
-            { label:'Zusagen',    data: srcLabels.map(s=>srcMap[s].zusage),   backgroundColor: isDark()?'rgba(74,222,128,.7)':'rgba(34,197,94,.75)',  borderRadius: 4, borderSkipped: false },
+            { label:'Interviews',  data: srcLabels.map(s=>srcMap[s].interview), backgroundColor: isDark()?'rgba(251,191,36,.75)':'rgba(245,158,11,.8)',  borderRadius: 4, borderSkipped: false },
+            { label:'Zusagen',     data: srcLabels.map(s=>srcMap[s].zusage),   backgroundColor: isDark()?'rgba(74,222,128,.75)':'rgba(34,197,94,.8)',   borderRadius: 4, borderSkipped: false },
           ],
         },
         options: {
@@ -191,6 +243,17 @@ function renderCharts() {
           plugins: {
             ...baseBarOpts(c).plugins,
             legend: { labels: { color: c.text, font: { family: c.font, size: 11 }, boxWidth: 11, padding: 10 } },
+            tooltip: {
+              ...tooltipStyle(),
+              callbacks: {
+                afterBody: (items) => {
+                  const src  = srcLabels[items[0].dataIndex];
+                  const tot  = srcMap[src].total;
+                  const rate = tot ? Math.round((srcMap[src].interview / tot) * 100) : 0;
+                  return `Interview-Rate: ${rate}% (${tot} Bewerbungen)`;
+                },
+              },
+            },
           },
         },
       });
@@ -310,7 +373,8 @@ function renderTable() {
       <div class="list-cards">
         ${State.filtered.map(a => {
           const lastTs  = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-          const stale   = a.status === 'Offen' && daysSince(lastTs) > 14;
+          const threshold_t = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+          const stale   = threshold_t > 0 && daysSince(lastTs) > threshold_t;
           const dateStr = fmtDateTime(a.applicationDate);
           return `
           <div class="app-card" onclick="openDetail('${a.id}')">
@@ -331,6 +395,11 @@ function renderTable() {
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
+              <div style="position:relative">
+                <button class="btn btn-icon btn-sm" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" style="color:var(--accent)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              </div>
               <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
@@ -349,14 +418,22 @@ function renderTable() {
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = State.filtered.map(a => {
     const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-    const stale  = a.status === 'Offen' && daysSince(lastTs) > 14;
+    const threshold_d = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+    const stale  = threshold_d > 0 && daysSince(lastTs) > threshold_d;
     return `<tr onclick="openDetail('${a.id}')">
       <td class="td-primary">
         ${stale ? '<span class="kanban-stale-dot" title="Offen seit &gt;14 Tagen"></span>' : ''}
         ${escHtml(a.company)}
       </td>
       <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
-      <td><span class="badge ${statusClass(a.status)}">${a.status}</span></td>
+      <td>
+        <div style="position:relative;display:inline-flex;" data-status-anchor>
+          <button class="status-pill status-pill--${a.status.toLowerCase()}" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
+            <span class="badge ${statusClass(a.status)}" style="pointer-events:none">${a.status}</span>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:.6"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+      </td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'–')}</td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
@@ -400,8 +477,13 @@ function renderKanban() {
     const currentSortLabel = KANBAN_SORT_OPTIONS.find(o => o.col===ks.col && o.dir===ks.dir)?.label || 'Sortierung';
 
     const cards = colApps.map(a => {
-      const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-      const stale  = status === 'Offen' && daysSince(lastTs) > 14;
+      const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
+      const threshold = State.settings.staleThreshold?.[status] ?? (status === 'Offen' ? 14 : 0);
+      const stale     = threshold > 0 && daysSince(lastTs) > threshold;
+      const eventCount = a.history?.length || 0;
+      // Get the most recent history note to show as preview
+      const lastNote = [...(a.history||[])].reverse().find(h => h.note)?.note || '';
+
       return `<div class="kanban-card"
         draggable="true"
         data-id="${a.id}"
@@ -411,14 +493,37 @@ function renderKanban() {
         ontouchend="onTouchEnd(event)"
         onclick="openDetail('${a.id}')"
         style="touch-action:none">
-        <div class="kanban-card-company">
-          ${stale ? '<span class="kanban-stale-dot" title="Offen seit >14 Tagen"></span>' : ''}
-          ${escHtml(a.company)}
-        </div>
-        <div class="kanban-card-position">${escHtml(a.position)}</div>
-        <div class="kanban-card-meta">
-          <span class="kanban-card-date">${fmtDateShort(a.applicationDate)}</span>
-          ${a.expectedSalary ? `<span class="kanban-card-salary">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+        <!-- Drag handle + content -->
+        <div class="kc-layout">
+          <div class="kc-handle" title="Ziehen zum Verschieben" onclick="event.stopPropagation()">
+            <svg width="10" height="14" viewBox="0 0 10 16" fill="currentColor"><circle cx="3" cy="2" r="1.2"/><circle cx="7" cy="2" r="1.2"/><circle cx="3" cy="6" r="1.2"/><circle cx="7" cy="6" r="1.2"/><circle cx="3" cy="10" r="1.2"/><circle cx="7" cy="10" r="1.2"/><circle cx="3" cy="14" r="1.2"/><circle cx="7" cy="14" r="1.2"/></svg>
+          </div>
+          <div class="kc-body">
+            <div class="kc-top">
+              <span class="kc-company">
+                ${stale ? '<span class="kanban-stale-dot" title="Lange keine Änderung"></span>' : ''}
+                ${escHtml(a.company)}
+              </span>
+              ${(a.contactName || a.contactEmail) ? `
+                <span class="kc-person" title="${escHtml(a.contactName||a.contactEmail)}">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </span>` : ''}
+            </div>
+            <div class="kc-position">${escHtml(a.position)}</div>
+            <div class="kc-meta">
+              <span class="kc-date">${fmtDateShort(a.applicationDate)}</span>
+              ${a.expectedSalary ? `<span class="kc-salary">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+            </div>
+            ${lastNote ? `<div class="kc-note-pill">${escHtml(lastNote)}</div>` : ''}
+            <div class="kc-bottom">
+              ${eventCount > 0 ? `<span class="kc-events">${eventCount} Ereignis${eventCount !== 1 ? 'se' : ''}</span>` : ''}
+              <div style="position:relative;margin-left:auto" data-status-anchor>
+                <button class="kc-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>`;
     }).join('');
