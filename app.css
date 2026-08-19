@@ -31,36 +31,99 @@
   --shadow-md:  0 4px 12px rgb(0 0 0 / .08), 0 2px 4px rgb(0 0 0 / .04);
   --shadow-lg:  0 12px 32px rgb(0 0 0 / .10), 0 4px 8px rgb(0 0 0 / .06);
   --shadow-xl:  0 24px 64px rgb(0 0 0 / .12), 0 8px 16px rgb(0 0 0 / .08);
-  --shadow-glow: 0 0 0 3px rgb(99 102 241 / .18);
+}
 
-  /* Accent */
+/* ─── Theme Skins ──────────────────────────────────────────────────────────────
+   A "skin" is the accent color family, independent of light/dark mode (that's
+   `data-theme`). Every skin only has to define these tokens — --accent-rgb feeds
+   every rgba()-based glow/shadow below via rgb(var(--accent-rgb) / <alpha>), so
+   adding a new skin never requires touching those rules. --accent-text is a
+   separately-tuned shade for when the accent is used as *text* on a light
+   background, since a bright/light accent (e.g. lime) can look great as a fill
+   but be nearly unreadable as foreground text — plain --accent covers fills,
+   borders and dark-mode text where that's not a problem. */
+:root, [data-skin="neon"] {
+  --accent-rgb:   229,253,93;
+  --accent:       #e5fd5d;
+  --accent-light: #eeff8f;
+  --accent-dark:  #c8e02e;
+  --accent-text:  #6d7d12;
+  --text-on-accent: #151514;
+  --accent-faint:  rgb(var(--accent-rgb) / .16);
+  --accent-faint2: rgb(var(--accent-rgb) / .30);
+  --shadow-glow:   0 0 0 3px rgb(var(--accent-rgb) / .40);
+}
+[data-skin="original"] {
+  --accent-rgb:   99,102,241;
   --accent:       #6366f1;
   --accent-light: #818cf8;
   --accent-dark:  #4f46e5;
-  --accent-faint: rgb(99 102 241 / .08);
-  --accent-faint2: rgb(99 102 241 / .15);
+  --accent-text:  #6366f1;
+  --text-on-accent: #ffffff;
+  --accent-faint:  rgb(var(--accent-rgb) / .08);
+  --accent-faint2: rgb(var(--accent-rgb) / .15);
+  --shadow-glow:   0 0 0 3px rgb(var(--accent-rgb) / .18);
 }
+[data-theme="dark"][data-skin="original"] { --accent-text: var(--accent-light); }
+[data-theme="dark"][data-skin="neon"]     { --accent-text: var(--accent-light); }
+[data-theme="dark"] { --shadow-glow: 0 0 0 3px rgb(var(--accent-rgb) / .35); }
 
-/* ─── Light Theme ──────────────────────────────────────────────────────────── */
-:root, [data-theme="light"] {
+/* "Original" restores the app's pre-Neon light palette exactly (incl. the
+   light sidebar) — the structural bg/border/text + dark-sidebar changes below
+   were designed for "Neon" only and must not bleed into "Original". */
+[data-theme="light"][data-skin="original"] {
   --bg-base:       #f4f4f8;
   --bg-elevated:   #ffffff;
   --bg-overlay:    rgba(255,255,255,0.88);
   --bg-subtle:     #f0f0f5;
-  --bg-input:      #ffffff;
   --bg-hover:      rgba(0,0,0,.035);
   --bg-nav:        #f9f9fc;
   --bg-nav-glass:  rgba(249,249,252,0.92);
-
   --border:        rgba(0,0,0,.08);
   --border-strong: rgba(0,0,0,.14);
   --border-input:  rgba(0,0,0,.12);
   --border-focus:  var(--accent);
-
   --text-primary:   #0d0d14;
   --text-secondary: #5c5c7a;
   --text-muted:     #9898b2;
-  --text-on-accent: #ffffff;
+}
+[data-theme="light"][data-skin="original"] #sidebar {
+  --bg-nav:        #f9f9fc;
+  --bg-hover:      rgba(0,0,0,.035);
+  --border:        rgba(0,0,0,.08);
+  --border-strong: rgba(0,0,0,.14);
+  --text-primary:   #0d0d14;
+  --text-secondary: #5c5c7a;
+  --text-muted:     #9898b2;
+  --accent-faint:  rgb(var(--accent-rgb) / .08);
+  --accent-faint2: rgb(var(--accent-rgb) / .15);
+  --accent-text:   var(--accent);
+}
+[data-theme="light"][data-skin="original"] #sidebar .sidebar-warn {
+  color: #d97706;
+  background: rgba(245,158,11,.1);
+  border-color: rgba(245,158,11,.25);
+}
+
+/* ─── Light Theme ──────────────────────────────────────────────────────────── */
+:root, [data-theme="light"] {
+  --bg-base:       #d9d9d9;
+  --bg-elevated:   #ffffff;
+  --bg-overlay:    rgba(255,255,255,0.90);
+  --bg-subtle:     #eeeeec;
+  --bg-input:      #ffffff;
+  --bg-hover:      rgba(21,21,20,.05);
+  --bg-nav:        #ffffff;
+  --bg-nav-glass:  rgba(255,255,255,0.92);
+
+  --border:        rgba(21,21,20,.12);
+  --border-strong: rgba(21,21,20,.22);
+  --border-input:  rgba(21,21,20,.18);
+  --border-focus:  var(--accent-text);
+
+  --text-primary:   #151514;
+  --text-secondary: #585858;
+  --text-muted:     #6f6f6a;
 
   --status-open-bg:    #eff6ff;
   --status-open-fg:    #2563eb;
@@ -84,26 +147,49 @@
   --backdrop-blur: saturate(180%) blur(16px);
 }
 
+/* Sidebar stays a permanently dark rail even in the light theme (matches the
+   reference dashboards — dark nav column, light content). Re-declaring the same
+   token names scoped to #sidebar means every existing var(--text-primary) etc.
+   rule inside it just picks up these values instead — no selector duplication. */
+[data-theme="light"] #sidebar {
+  --bg-nav:        #151514;
+  --bg-elevated:   #1f1f1d;
+  --bg-subtle:     #262624;
+  --bg-hover:      rgba(255,255,255,.06);
+  --border:        rgba(255,255,255,.08);
+  --border-strong: rgba(255,255,255,.16);
+  --text-primary:   #f4f4f0;
+  --text-secondary: #b5b5b0;
+  --text-muted:     #6f6f6a;
+  --accent-faint:  rgb(var(--accent-rgb) / .16);
+  --accent-faint2: rgb(var(--accent-rgb) / .22);
+  --accent-text:   var(--accent-light);
+}
+[data-theme="light"] #sidebar .sidebar-warn {
+  color: #fbbf24;
+  background: rgba(251,191,36,.14);
+  border-color: rgba(251,191,36,.3);
+}
+
 /* ─── Dark Theme ───────────────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --bg-base:       #09090f;
-  --bg-elevated:   #111118;
-  --bg-overlay:    rgba(17,17,24,0.92);
-  --bg-subtle:     #1a1a26;
-  --bg-input:      #16161f;
-  --bg-hover:      rgba(255,255,255,.04);
-  --bg-nav:        #0c0c14;
-  --bg-nav-glass:  rgba(12,12,20,0.94);
+  --bg-base:       #151514;
+  --bg-elevated:   #1f1f1d;
+  --bg-overlay:    rgba(31,31,29,0.92);
+  --bg-subtle:     #262624;
+  --bg-input:      #1c1c1a;
+  --bg-hover:      rgba(255,255,255,.045);
+  --bg-nav:        #101010;
+  --bg-nav-glass:  rgba(16,16,16,0.94);
 
-  --border:        rgba(255,255,255,.07);
-  --border-strong: rgba(255,255,255,.12);
+  --border:        rgba(255,255,255,.08);
+  --border-strong: rgba(255,255,255,.14);
   --border-input:  rgba(255,255,255,.10);
-  --border-focus:  var(--accent-light);
+  --border-focus:  var(--accent);
 
-  --text-primary:   #f0f0fa;
-  --text-secondary: #8888a8;
-  --text-muted:     #55556a;
-  --text-on-accent: #ffffff;
+  --text-primary:   #f4f4f0;
+  --text-secondary: #b5b5b0;
+  --text-muted:     #6f6f6a;
 
   --status-open-bg:    rgba(37, 99, 235, .14);
   --status-open-fg:    #93c5fd;
@@ -128,7 +214,6 @@
   --shadow-md:  0 4px 12px rgb(0 0 0 / .40), 0 2px 4px rgb(0 0 0 / .20);
   --shadow-lg:  0 12px 32px rgb(0 0 0 / .55), 0 4px 8px rgb(0 0 0 / .30);
   --shadow-xl:  0 24px 64px rgb(0 0 0 / .65), 0 8px 16px rgb(0 0 0 / .40);
-  --shadow-glow: 0 0 0 3px rgb(99 102 241 / .30);
 
   --grain-opacity: 0.055;
   --backdrop-blur: saturate(180%) blur(20px);
@@ -171,7 +256,7 @@ body::after {
 }
 [data-theme="dark"] body::after { opacity: 0.055; }
 
-::selection { background: var(--accent-faint2); color: var(--accent); }
+::selection { background: var(--accent-faint2); color: var(--accent-text); }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -305,7 +390,7 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border-radius: var(--r-md);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgb(99 102 241 / .35);
+  box-shadow: 0 2px 8px rgb(var(--accent-rgb) / .45);
   flex-shrink: 0;
 }
 .nav-logo-text {
@@ -343,12 +428,12 @@ button.nav-item {
 .nav-item:hover { background: var(--bg-hover); color: var(--text-primary) !important; }
 .nav-item.active {
   background: var(--accent-faint2);
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   border-color: var(--accent-faint2);
 }
 [data-theme="dark"] .nav-item.active {
-  background: rgba(99,102,241,.14);
-  border-color: rgba(99,102,241,.2);
+  background: rgb(var(--accent-rgb) / .14);
+  border-color: rgb(var(--accent-rgb) / .2);
   color: var(--accent-light) !important;
 }
 .nav-item .nav-count {
@@ -365,7 +450,7 @@ button.nav-item {
 }
 .nav-item.active .nav-count {
   background: var(--accent-faint2);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme="dark"] .nav-item.active .nav-count {
   color: var(--accent-light);
@@ -379,7 +464,7 @@ button.nav-item {
   text-align: center;
 }
 .sidebar-version { font-family: var(--font-mono); letter-spacing: 0.02em; }
-.sidebar-challenge a { color: var(--accent); text-decoration: none; }
+.sidebar-challenge a { color: var(--accent-text); text-decoration: none; }
 .sidebar-challenge a:hover { text-decoration: underline; }
 [data-theme="dark"] .sidebar-challenge a { color: var(--accent-light); }
 
@@ -422,7 +507,7 @@ button.theme-toggle {
   background: none; border: none;
   max-width: 80px;
 }
-.bnav-item:hover, .bnav-item.active { color: var(--accent); }
+.bnav-item:hover, .bnav-item.active { color: var(--accent-text); }
 [data-theme="dark"] .bnav-item:hover,
 [data-theme="dark"] .bnav-item.active { color: var(--accent-light); }
 .bnav-dot {
@@ -437,7 +522,7 @@ button.theme-toggle {
 .bnav-badge {
   position: absolute; top: 4px; right: calc(50% - 20px);
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   font-size: 0.6rem; font-weight: 700;
   width: 16px; height: 16px;
   border-radius: 50%;
@@ -480,12 +565,12 @@ button.theme-toggle {
 
 .btn-primary {
   background: var(--accent);
-  color: white;
-  box-shadow: 0 2px 8px rgb(99 102 241 / .30);
+  color: var(--text-on-accent);
+  box-shadow: 0 2px 8px rgb(var(--accent-rgb) / .35);
 }
 .btn-primary:hover {
   background: var(--accent-dark);
-  box-shadow: 0 4px 16px rgb(99 102 241 / .40);
+  box-shadow: 0 4px 16px rgb(var(--accent-rgb) / .45);
   transform: translateY(-1px);
 }
 
@@ -543,7 +628,7 @@ button.theme-toggle {
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgb(99 102 241 / .15);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .35);
 }
 .form-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
@@ -668,7 +753,7 @@ th {
 }
 th.sortable { cursor: pointer; transition: color var(--t-fast); }
 th.sortable:hover { color: var(--text-primary); }
-th.sort-active { color: var(--accent); }
+th.sort-active { color: var(--accent-text); }
 [data-theme="dark"] th.sort-active { color: var(--accent-light); }
 .sort-arrow { margin-left: 4px; opacity: 0.5; }
 th.sort-active .sort-arrow { opacity: 1; }
@@ -703,11 +788,17 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   display: flex;
   /* Desktop bleibt immer horizontal: beim Verschieben einer Bewerbung in "den
      nächsten Status" bleibt die Richtung intuitiv. Bei vielen individuellen
-     Kategorien wird gescrollt statt in eine zweite Zeile umzubrechen. */
-  gap: 0.875rem;
+     Kategorien wird gescrollt statt in eine zweite Zeile umzubrechen. Größerer
+     Abstand, weil die Spalten-Header (Titel/Punkt links, Sortier-Button rechts)
+     sonst bis an den Rand reichen und mit der Nachbarspalte zu eng wirken. */
+  gap: 1.75rem;
   align-items: start;
   overflow-x: auto;
   padding-bottom: 1.25rem;
+  /* Reicht bis nahe an den Viewport-Rand, damit die horizontale Scrollleiste
+     unten am Bildschirmrand sitzt statt direkt (und mittig wirkend) unter
+     kurzen Spalten zu schweben. */
+  min-height: calc(100vh - 200px);
 }
 .kanban-column { flex: 1 0 220px; min-width: 220px; }
 
@@ -722,6 +813,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
     overflow-x: visible;
     gap: 0.5rem;
     padding-bottom: 0;
+    min-height: 0;
   }
   .kanban-column { flex-basis: auto; min-width: 0; }
 }
@@ -799,7 +891,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .kanban-card-position { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kanban-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .kanban-card-date { font-size: 0.68rem; font-family: var(--font-mono); color: var(--text-muted); }
-.kanban-card-salary { font-size: 0.68rem; font-family: var(--font-mono); color: var(--accent); font-weight: 600; }
+.kanban-card-salary { font-size: 0.68rem; font-family: var(--font-mono); color: var(--accent-text); font-weight: 600; }
 [data-theme="dark"] .kanban-card-salary { color: var(--accent-light); }
 .kanban-stale-dot {
   display: inline-block;
@@ -914,7 +1006,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   padding: 0.35rem 0.75rem;
   border-radius: var(--r-full);
   border: 1px solid var(--border-strong);
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
   transition: all var(--t-fast);
   background: var(--accent-faint);
@@ -987,7 +1079,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .view-btn:hover { color: var(--text-primary); }
 .view-btn.active {
   background: var(--bg-elevated);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--shadow-xs);
 }
 [data-theme="dark"] .view-btn.active { color: var(--accent-light); }
@@ -1095,7 +1187,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .calendar-cell.out-month { opacity: 0.4; }
 .calendar-cell.today { border-color: var(--accent); background: var(--accent-faint); }
 .calendar-cell-num { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-.calendar-cell.today .calendar-cell-num { color: var(--accent); }
+.calendar-cell.today .calendar-cell-num { color: var(--accent-text); }
 .calendar-cell-events { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
 .calendar-event-pill {
   display: block; width: 100%; box-sizing: border-box;
@@ -1125,7 +1217,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .upcoming-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); }
 .upcoming-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
 .upcoming-date { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; padding-top: 2px; }
-.upcoming-date--today { color: var(--accent); font-weight: 700; }
+.upcoming-date--today { color: var(--accent-text); font-weight: 700; }
 .stc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
 
 .persist-status {
@@ -1253,7 +1345,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   cursor: pointer; transition: all var(--t-fast);
 }
 .sort-popover-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-.sort-popover-item.active { color: var(--accent); }
+.sort-popover-item.active { color: var(--accent-text); }
 [data-theme="dark"] .sort-popover-item.active { color: var(--accent-light); }
 .sort-popover-item .check { margin-left: auto; }
 
@@ -1404,7 +1496,7 @@ tbody tr:hover { background: var(--bg-hover); }
 .link-pill {
   background: var(--accent-faint);
   border-color: var(--border-strong);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 [data-theme="dark"] .link-pill { color: var(--accent-light); }
 
@@ -1433,7 +1525,7 @@ tbody tr:hover { background: var(--bg-hover); }
 
 /* View switch */
 .view-switch { background: var(--bg-subtle); border-color: var(--border); }
-.view-btn.active { background: var(--bg-elevated); color: var(--accent); }
+.view-btn.active { background: var(--bg-elevated); color: var(--accent-text); }
 [data-theme="dark"] .view-btn.active { color: var(--accent-light); }
 
 /* Smooth theme transition on all key elements */
@@ -1543,7 +1635,7 @@ tbody tr:hover { background: var(--bg-hover); }
   text-overflow: ellipsis;
 }
 .app-card-chip--mono   { font-family: var(--font-mono); }
-.app-card-chip--accent { color: var(--accent); background: var(--accent-faint); }
+.app-card-chip--accent { color: var(--accent-text); background: var(--accent-faint); }
 [data-theme="dark"] .app-card-chip--accent { color: var(--accent-light); }
 
 .app-card-actions {
@@ -1586,7 +1678,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 .nav-logo-dot {
   font-weight: 800;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1708,7 +1800,7 @@ body { -webkit-overflow-scrolling: auto; }
   height: 22px;
   border-radius: 50%;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   font-size: 0.72rem;
   font-weight: 700;
   display: flex;
@@ -2335,7 +2427,7 @@ body { -webkit-overflow-scrolling: auto; }
   transition: color var(--t-fast), background var(--t-fast) !important;
 }
 .research-btn-icon:hover {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   background: var(--accent-faint) !important;
 }
 [data-theme="dark"] .research-btn-icon:hover { color: var(--accent-light) !important; }
@@ -2362,7 +2454,7 @@ body { -webkit-overflow-scrolling: auto; }
   letter-spacing: 0.04em;
 }
 .research-btn:hover {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
   border-color: var(--accent);
   background: var(--accent-faint);
 }
@@ -2456,4 +2548,4 @@ body { -webkit-overflow-scrolling: auto; }
 
 /* Bell button: accent when reminder is set */
 #d-bell-btn { transition: color var(--t-fast); }
-#d-bell-btn:hover { color: var(--accent) !important; }
+#d-bell-btn:hover { color: var(--accent-text) !important; }

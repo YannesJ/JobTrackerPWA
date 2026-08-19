@@ -12,11 +12,21 @@ const Charts = {};
 function isDark() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
+// RGB-Tripel des aktiven Skins (z.B. "229,253,93") für Canvas-Farben (Chart.js
+// rendert auf <canvas>, das kaskadiert nicht über CSS — Custom Properties müssen
+// hier explizit ausgelesen werden, statt sie wie im DOM einfach zu vererben).
+function accentRgb() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '99,102,241';
+}
+function accentTextColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent-text').trim() || '#6366f1';
+}
 function chartColors() {
   return {
     grid:   isDark() ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-    text:   isDark() ? '#55556a' : '#9898b2',
+    text:   isDark() ? '#6f6f6a' : '#8f8f8a',
     font:   "'Outfit', sans-serif",
+    accentRgb: accentRgb(),
   };
 }
 function destroyChart(id) { if (Charts[id]) { Charts[id].destroy(); delete Charts[id]; } }
@@ -83,7 +93,7 @@ function renderDashboard() {
   document.getElementById('kpi-grid').innerHTML = [
     { label:'Gesamt',         value: total,
       sub: `${offene} offen · ${absagen} Absage${absagen!==1?'n':''}`,
-      icon:'file-text',   color:'#6366f1', bg:'rgba(99,102,241,.1)' },
+      icon:'file-text',   color: accentTextColor(), bg: `rgba(${accentRgb()},.20)` },
     { label:'Interview-Rate', value: interviewRate+'%',
       sub: `${interviews + zusagen} von ${total} erreichten`,
       icon:'trending-up', color:'#22c55e', bg:'rgba(34,197,94,.1)'  },
@@ -162,8 +172,9 @@ function renderCharts() {
   const wCtx = document.getElementById('chart-weekly')?.getContext('2d');
   if (wCtx) {
     const grad = wCtx.createLinearGradient(0, 0, 0, 180);
-    grad.addColorStop(0,   isDark() ? 'rgba(99,102,241,.7)' : 'rgba(99,102,241,.8)');
-    grad.addColorStop(1,   isDark() ? 'rgba(99,102,241,.2)' : 'rgba(99,102,241,.3)');
+    const rgb  = accentRgb();
+    grad.addColorStop(0, `rgba(${rgb},${isDark() ? .8 : .9})`);
+    grad.addColorStop(1, `rgba(${rgb},${isDark() ? .25 : .35})`);
     Charts.weekly = new Chart(wCtx, {
       type: 'bar',
       data: { labels: weekLabels, datasets: [{ data: weekData, backgroundColor: grad, borderRadius: 5, borderSkipped: false }] },
@@ -285,10 +296,10 @@ function baseBarOpts(c) {
 function tooltipStyle() {
   const dark = isDark();
   return {
-    backgroundColor: dark ? 'rgba(30,30,45,0.95)' : 'rgba(15,15,25,0.92)',
-    titleColor: dark ? '#f0f0fa' : '#f0f0fa',
-    bodyColor:  dark ? '#8888a8' : '#9898b2',
-    borderColor: 'rgba(99,102,241,.3)',
+    backgroundColor: dark ? 'rgba(38,38,36,0.95)' : 'rgba(21,21,20,0.92)',
+    titleColor: '#f4f4f0',
+    bodyColor:  dark ? '#b5b5b0' : '#c4c4be',
+    borderColor: `rgba(${accentRgb()},.35)`,
     borderWidth: 1,
     padding: 10,
     cornerRadius: 10,

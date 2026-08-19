@@ -164,6 +164,7 @@ const State = {
     Zusage:    { col: 'applicationDate', dir: 'desc' },
   },
   theme:  localStorage.getItem('jt-theme') || 'system',
+  skin:   localStorage.getItem('jt-skin') || 'neon',
   // Persisted settings
   settings: loadSettings(),
   // Individuell konfigurierbare Status-Kategorien
@@ -306,9 +307,9 @@ function applyTheme(theme) {
   document.querySelectorAll('[data-theme-btn]').forEach(b => {
     const isActive = b.dataset.themeBtn === theme;
     b.style.background    = isActive ? 'var(--accent)'      : '';
-    b.style.color         = isActive ? 'white'              : '';
+    b.style.color         = isActive ? 'var(--text-on-accent)' : '';
     b.style.borderColor   = isActive ? 'var(--accent)'      : '';
-    b.style.boxShadow     = isActive ? '0 2px 8px rgb(99 102 241/.30)' : '';
+    b.style.boxShadow     = isActive ? '0 2px 8px rgb(var(--accent-rgb)/.35)' : '';
   });
 
   // Redraw charts if dashboard visible
@@ -319,6 +320,43 @@ function applyTheme(theme) {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (State.theme === 'system') applyTheme('system');
 });
+
+// ─── Skin (Farbschema-Stil, unabhängig von Hell/Dunkel) ────────────────────────
+// Neue Stile: hier einen Eintrag ergänzen + passenden [data-skin="…"]-Block in app.css.
+const SKINS = [
+  { key: 'original', label: 'Original' },
+  { key: 'neon',     label: 'Neon' },
+];
+function renderSkinButtons() {
+  const el = document.getElementById('skin-settings-buttons');
+  if (!el) return;
+  el.innerHTML = SKINS.map(s => `
+    <button data-skin-btn="${s.key}" class="btn btn-ghost btn-sm" onclick="applySkin('${s.key}')">${escHtml(s.label)}</button>
+  `).join('');
+  document.querySelectorAll('[data-skin-btn]').forEach(b => {
+    const isActive = b.dataset.skinBtn === State.skin;
+    b.style.background  = isActive ? 'var(--accent)'         : '';
+    b.style.color        = isActive ? 'var(--text-on-accent)' : '';
+    b.style.borderColor  = isActive ? 'var(--accent)'         : '';
+  });
+}
+function applySkin(skin) {
+  if (!SKINS.some(s => s.key === skin)) skin = SKINS[0].key;
+  State.skin = skin;
+  localStorage.setItem('jt-skin', skin);
+  document.documentElement.setAttribute('data-skin', skin);
+
+  document.querySelectorAll('[data-skin-btn]').forEach(b => {
+    const isActive = b.dataset.skinBtn === skin;
+    b.style.background  = isActive ? 'var(--accent)'         : '';
+    b.style.color        = isActive ? 'var(--text-on-accent)' : '';
+    b.style.borderColor  = isActive ? 'var(--accent)'         : '';
+  });
+
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) {
+    renderCharts();
+  }
+}
 
 // ─── DB CRUD ──────────────────────────────────────────────────────────────────
 async function loadAll() {
@@ -368,7 +406,7 @@ function navigate(tab) {
   if (tab === 'dashboard')    renderDashboard();
   if (tab === 'applications') renderView();
   if (tab === 'calendar')     renderCalendar();
-  if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); }
+  if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); }
   lucide.createIcons();
 }
 
@@ -1472,7 +1510,7 @@ function renderStatusSettings() {
       }).join('')}
     </div>
     <form class="status-add-row" onsubmit="return addStatus(event)">
-      <input type="color" id="new-status-color" class="status-color-input" value="#6366f1" title="Farbe" />
+      <input type="color" id="new-status-color" class="status-color-input" value="#c8e02e" title="Farbe" />
       <input type="text" id="new-status-name" class="form-input status-name-input" placeholder="Neue Kategorie …" required />
       <button type="submit" class="btn btn-ghost btn-sm">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2069,6 +2107,7 @@ if ('serviceWorker' in navigator) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   applyTheme(State.theme);
+  applySkin(State.skin);
   if (localStorage.getItem('jt-sidebar-collapsed') === '1') {
     document.getElementById('app').classList.add('sidebar-collapsed');
   }
@@ -2082,6 +2121,7 @@ if ('serviceWorker' in navigator) {
   handleShareTarget();
   renderSettingsNotifications();
   renderStatusSettings();
+  renderSkinButtons();
   lucide.createIcons();
   // Show install prompt once on first visit
   setTimeout(_maybeShowInstallModal, 1500);
