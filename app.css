@@ -177,6 +177,9 @@ body::after {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-full); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+/* Firefox doesn't support ::-webkit-scrollbar — without this it falls back to a
+   bulky native scrollbar (most noticeable on the horizontally-scrolling Kanban board). */
+html { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
 /* ─── Typography ───────────────────────────────────────────────────────────── */
 h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
@@ -698,16 +701,30 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 /* ─── Kanban ───────────────────────────────────────────────────────────────── */
 .kanban-board {
   display: flex;
-  /* Immer horizontal: beim Verschieben einer Bewerbung in "den nächsten Status"
-     bleibt die Richtung intuitiv. Bei vielen individuellen Kategorien wird
-     gescrollt statt in eine zweite Zeile umzubrechen. */
+  /* Desktop bleibt immer horizontal: beim Verschieben einer Bewerbung in "den
+     nächsten Status" bleibt die Richtung intuitiv. Bei vielen individuellen
+     Kategorien wird gescrollt statt in eine zweite Zeile umzubrechen. */
   gap: 0.875rem;
   align-items: start;
   overflow-x: auto;
-  padding-bottom: 0.5rem;
+  padding-bottom: 1.25rem;
 }
 .kanban-column { flex: 1 0 220px; min-width: 220px; }
-@media (max-width: 480px) { .kanban-board { gap: 0.5rem; } .kanban-column { flex-basis: 78vw; min-width: 78vw; } }
+
+/* Mobile (= Bottom-Nav-Breakpoint): zurück zu einem Raster statt Seitwärts-Scrollen
+   — bei 4 Kategorien ergibt das ein griffiges 2×2-Raster, was sich in der Praxis
+   deutlich besser bedienen lässt als schmale, seitlich wegscrollende Spalten.
+   Bei mehr Kategorien wächst das Raster einfach um weitere Zeilen. */
+@media (max-width: 768px) {
+  .kanban-board {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    overflow-x: visible;
+    gap: 0.5rem;
+    padding-bottom: 0;
+  }
+  .kanban-column { flex-basis: auto; min-width: 0; }
+}
 
 .kanban-col-header {
   display: flex;
