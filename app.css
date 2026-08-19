@@ -329,6 +329,16 @@ button.nav-item {
 }
 
 .nav-bottom { margin-top: auto; }
+.sidebar-footer {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 0.625rem 0.5rem 0.25rem;
+  font-size: 0.65rem; color: var(--text-muted);
+  text-align: center;
+}
+.sidebar-version { font-family: var(--font-mono); letter-spacing: 0.02em; }
+.sidebar-challenge a { color: var(--accent); text-decoration: none; }
+.sidebar-challenge a:hover { text-decoration: underline; }
+[data-theme="dark"] .sidebar-challenge a { color: var(--accent-light); }
 
 /* Theme toggle in sidebar */
 button.theme-toggle {
