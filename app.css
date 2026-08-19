@@ -207,7 +207,8 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   flex-direction: column;
   padding: 1.25rem 0.75rem;
   z-index: 40;
-  transition: background var(--t-base), border-color var(--t-base), color var(--t-base);
+  overflow: hidden;
+  transition: width var(--t-base), background var(--t-base), border-color var(--t-base), color var(--t-base);
 }
 
 #main {
@@ -216,6 +217,45 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: margin-left var(--t-base);
+}
+
+/* Collapsible sidebar (desktop only) */
+.sidebar-collapse-btn {
+  position: fixed;
+  top: 26px;
+  left: 220px;
+  transform: translateX(-50%);
+  width: 22px; height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 45;
+  box-shadow: var(--shadow-xs);
+  transition: left var(--t-base), background var(--t-fast), color var(--t-fast);
+}
+.sidebar-collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.sidebar-collapse-btn svg { transition: transform var(--t-base); }
+@media (max-width: 768px) { .sidebar-collapse-btn { display: none !important; } }
+
+#app.sidebar-collapsed #sidebar { width: 68px; padding-left: 0.5rem; padding-right: 0.5rem; }
+#app.sidebar-collapsed #main { margin-left: 68px; }
+#app.sidebar-collapsed .sidebar-collapse-btn { left: 68px; }
+#app.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
+#app.sidebar-collapsed .nav-logo { justify-content: center; }
+#app.sidebar-collapsed .nav-logo-text,
+#app.sidebar-collapsed .sidebar-footer,
+#app.sidebar-collapsed .nav-count { display: none; }
+#app.sidebar-collapsed .nav-item,
+#app.sidebar-collapsed .theme-toggle,
+#app.sidebar-collapsed .sidebar-warn {
+  font-size: 0;
+  gap: 0;
+  justify-content: center;
 }
 
 /* Bottom Nav (Mobile) */
