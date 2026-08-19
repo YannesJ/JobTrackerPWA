@@ -1090,38 +1090,49 @@ function toggleImportInfo(e) {
   e.stopPropagation();
   document.querySelectorAll('.import-info-popover').forEach(p => p.remove());
 
-  const descriptions = {
-    company:'Firmenname', position:'Jobtitel', status:'z.B. Offen/Interview\u2026', source:'z.B. LinkedIn',
-    applicationDate:'Datum (JJJJ-MM-TT)', expectedSalary:'Zahl', rejectionReason:'Text',
-    contactName:'Text', contactPhone:'Text', contactEmail:'Text', platformLink:'URL',
-    documentLink:'URL', notes:'Text',
-  };
-  const rows = Object.entries(IMPORT_COL_MAP).map(([col, field]) => {
-    const label = col === 'firma' ? 'Firma *' : col.charAt(0).toUpperCase() + col.slice(1);
-    return `<div class="import-info-row"><span>${escHtml(label)}</span><span>${escHtml(descriptions[field] || '')}</span></div>`;
-  }).join('');
+  const colLabels = Object.keys(IMPORT_COL_MAP)
+    .map(col => col === 'firma' ? 'Firma*' : col.charAt(0).toUpperCase() + col.slice(1))
+    .join(', ');
 
   const popover = document.createElement('div');
-  popover.className = 'sort-popover status-popover import-info-popover';
+  popover.className = 'import-info-popover';
   popover.innerHTML = `
-    <div style="padding:.75rem .875rem;max-width:280px">
-      <div style="font-weight:700;font-size:.78rem;margin-bottom:.5rem">Erwartetes Spaltenformat</div>
-      <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:.5rem">Erste Zeile = \u00DCberschriften (Gro\u00DF-/Kleinschreibung egal). Nur <strong>Firma</strong> ist Pflicht, unbekannte Spalten werden ignoriert.</p>
-      <div class="import-info-table">${rows}</div>
-    </div>
+    <div class="import-info-title">Erwartetes Spaltenformat</div>
+    <p>Erste Zeile = \u00DCberschriften (Gro\u00DF-/Kleinschreibung egal). Erkannt werden: ${escHtml(colLabels)}. Nur <strong>Firma*</strong> ist Pflicht, unbekannte Spalten werden ignoriert.</p>
+    <p>Alles bleibt lokal in deinem Browser \u2013 beim Import wird nichts hochgeladen oder \u00FCbertragen.</p>
   `;
 
-  const anchor = e.currentTarget.closest('[data-status-anchor]');
-  (anchor || e.currentTarget.parentNode).appendChild(popover);
+  // Fixed-positioniert & an <body> geh\u00E4ngt (wie beim Status-Popover), damit es nicht
+  // von der Karte darunter abgeschnitten oder komisch versetzt dargestellt wird.
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.left, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.visibility = '';
 
   setTimeout(() => {
-    const close = (ev) => {
-      if (!popover.contains(ev.target) && ev.target !== e.currentTarget) {
-        popover.remove();
-        document.removeEventListener('click', close, true);
-      }
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
     };
-    document.addEventListener('click', close, true);
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
   }, 0);
 }
 

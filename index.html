@@ -273,14 +273,14 @@
               Import JSON
               <input type="file" accept=".json" style="display:none" onchange="importData(event)" />
             </label>
-            <label class="btn btn-ghost btn-sm" style="cursor:pointer">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Import CSV / Excel
-              <input type="file" accept=".csv,.tsv,.xlsx,.xls" style="display:none" onchange="importCSV(event)" />
-            </label>
-            <div style="position:relative" data-status-anchor>
-              <button type="button" class="btn btn-icon btn-sm" onclick="toggleImportInfo(event)" title="Welches Spaltenformat wird erwartet?">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <div style="display:inline-flex;align-items:center;gap:2px;flex-shrink:0" data-status-anchor>
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Import CSV / Excel
+                <input type="file" accept=".csv,.tsv,.xlsx,.xls" style="display:none" onchange="importCSV(event)" />
+              </label>
+              <button type="button" class="btn btn-icon btn-sm import-info-btn" onclick="toggleImportInfo(event)" title="Welches Spaltenformat wird erwartet?">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               </button>
             </div>
           </div>

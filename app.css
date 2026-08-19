@@ -1118,6 +1118,24 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   transition: max-height var(--t-spring);
 }
 .status-settings-expand.open { max-height: 900px; }
+
+.import-info-popover {
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 0.75rem 0.875rem;
+  z-index: 500;
+  animation: popoverIn 0.15s ease;
+}
+.import-info-title { font-weight: 700; font-size: 0.78rem; margin-bottom: 0.4rem; color: var(--text-primary); }
+.import-info-popover p {
+  font-size: 0.72rem; line-height: 1.5; color: var(--text-secondary);
+}
+.import-info-popover p + p { margin-top: 0.5rem; }
+.import-info-popover strong { color: var(--text-primary); }
 .status-manage-list {
   display: flex; flex-direction: column; gap: 0.5rem;
   margin-bottom: 0.75rem;
