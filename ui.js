@@ -574,6 +574,96 @@ function toggleKanbanSortMenu(e, status) {
   btn.parentElement.appendChild(popover);
 }
 
+// ─── Kalender ─────────────────────────────────────────────────────────────────
+const CALENDAR_WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+function renderCalendar() {
+  renderCalendarGrid();
+  renderUpcomingEvents();
+  populateEventAppSelect();
+}
+
+function renderCalendarGrid() {
+  const grid = document.getElementById('calendar-grid');
+  const label = document.getElementById('calendar-month-label');
+  if (!grid) return;
+
+  const base  = State.calendarMonth;
+  const year  = base.getFullYear(), month = base.getMonth();
+  if (label) label.textContent = base.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset  = (firstOfMonth.getDay() + 6) % 7; // Woche beginnt Montag
+  const daysInMonth   = new Date(year, month + 1, 0).getDate();
+  const totalCells    = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  const gridStart      = new Date(year, month, 1 - startOffset);
+  const todayStr        = localDateStr(new Date());
+
+  const eventsByDate = {};
+  State.events.forEach(e => { (eventsByDate[e.date] ||= []).push(e); });
+
+  let html = CALENDAR_WEEKDAYS.map(d => `<div class="calendar-weekday">${d}</div>`).join('');
+
+  for (let i = 0; i < totalCells; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    const dStr      = localDateStr(d);
+    const inMonth   = d.getMonth() === month;
+    const isToday   = dStr === todayStr;
+    const dayEvents = (eventsByDate[dStr] || []).slice().sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+    const shown     = dayEvents.slice(0, 3);
+    const more      = dayEvents.length - shown.length;
+
+    html += `<div class="calendar-cell${inMonth ? '' : ' out-month'}${isToday ? ' today' : ''}" onclick="openEventModal('${dStr}')">
+      <div class="calendar-cell-num">${d.getDate()}</div>
+      <div class="calendar-cell-events">
+        ${shown.map(ev => {
+          const app  = ev.appId ? State.all.find(a => a.id === ev.appId) : null;
+          const cls  = `s-${app ? statusSlot(app.status) : 0}`;
+          const text = app ? app.company : ev.title;
+          const tip  = (ev.time ? ev.time + ' · ' : '') + ev.title;
+          return `<div class="calendar-event-pill badge-dyn ${cls}" onclick="event.stopPropagation();openEventModal('${dStr}','${ev.id}')" title="${escAttr(tip)}">
+            ${ev.time ? `<span class="calendar-event-time">${escHtml(ev.time)}</span>` : ''}${escHtml(text)}
+          </div>`;
+        }).join('')}
+        ${more > 0 ? `<div class="calendar-more">+${more} weitere</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  grid.innerHTML = html;
+}
+
+function renderUpcomingEvents() {
+  const el = document.getElementById('upcoming-events');
+  if (!el) return;
+  const todayStr = localDateStr(new Date());
+  const upcoming = State.events
+    .filter(e => e.date >= todayStr)
+    .sort((a, b) => `${a.date} ${a.time || '99:99'}`.localeCompare(`${b.date} ${b.time || '99:99'}`))
+    .slice(0, 12);
+
+  if (!upcoming.length) {
+    el.innerHTML = `<p style="font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0.25rem">Keine anstehenden Termine.</p>`;
+    return;
+  }
+
+  el.innerHTML = upcoming.map(ev => {
+    const app       = ev.appId ? State.all.find(a => a.id === ev.appId) : null;
+    const cls       = `s-${app ? statusSlot(app.status) : 0}`;
+    const isToday   = ev.date === todayStr;
+    const dateLabel = isToday ? 'Heute' : fmtDateShort(ev.date);
+    return `<div class="upcoming-item" onclick="openEventModal('${ev.date}','${ev.id}')">
+      <div class="stc-dot ${cls}"></div>
+      <div class="upcoming-body">
+        <div class="upcoming-title">${escHtml(ev.title)}</div>
+        ${app ? `<div class="upcoming-sub">${escHtml(app.company)} – ${escHtml(app.position)}</div>` : ''}
+      </div>
+      <div class="upcoming-date${isToday ? ' upcoming-date--today' : ''}">${dateLabel}${ev.time ? ` · ${escHtml(ev.time)}` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
 // Hide/show columns based on viewport; re-render table at mobile breakpoint
 const mq_sm = window.matchMedia('(max-width: 640px)');
 const mq_md = window.matchMedia('(max-width: 900px)');

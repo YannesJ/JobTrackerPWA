@@ -199,6 +199,11 @@ function uuid() {
     (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
 }
 function nowISO()  { return new Date().toISOString(); }
+// YYYY-MM-DD aus den LOKALEN Datumsfeldern – anders als toISOString() (UTC-basiert)
+// verschiebt das den Tag nicht in Zeitzonen abseits von UTC (z.B. Kalender-Zellen).
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function fmtDate(iso) {
   if (!iso) return '–';
   const d = new Date(iso);
@@ -330,6 +335,22 @@ async function deleteApp(id) {
   await deleteReminder(id); // remove any associated reminder
   await loadAll();
   toast('Bewerbung gelöscht', 'info');
+}
+
+// ─── Kalender-Termine ───────────────────────────────────────────────────────────
+async function loadEvents() {
+  const pairs = await idbEntries(EVENTS);
+  State.events = pairs.map(([, v]) => v)
+    .sort((a, b) => `${a.date} ${a.time || '99:99'}`.localeCompare(`${b.date} ${b.time || '99:99'}`));
+}
+async function saveEvent(ev) {
+  ev.updatedAt = nowISO();
+  await idbSet(ev.id, ev, EVENTS);
+  await loadEvents();
+}
+async function deleteEventById(id) {
+  await idbDel(id, EVENTS);
+  await loadEvents();
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -1231,6 +1252,78 @@ async function deleteReminderFromModal() {
   toast('Erinnerung gelöscht', 'info');
 }
 
+// ── Kalender: Monatsnavigation ──────────────────────────────────────────────────
+function changeCalendarMonth(delta) {
+  const d = new Date(State.calendarMonth);
+  d.setMonth(d.getMonth() + delta);
+  State.calendarMonth = d;
+  renderCalendar();
+}
+function goToCalendarToday() {
+  const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0);
+  State.calendarMonth = d;
+  renderCalendar();
+}
+
+// ── Kalender: Termin-Modal ───────────────────────────────────────────────────────
+function populateEventAppSelect() {
+  const sel = document.getElementById('ev-app');
+  if (!sel) return;
+  const prev = sel.value;
+  const opts = [...State.all]
+    .sort((a, b) => a.company.localeCompare(b.company))
+    .map(a => `<option value="${a.id}">${escHtml(a.company)} – ${escHtml(a.position)}</option>`).join('');
+  sel.innerHTML = `<option value="">– keine Verknüpfung –</option>` + opts;
+  if (State.all.some(a => a.id === prev)) sel.value = prev;
+}
+
+function openEventModal(dateStr, eventId) {
+  const ev = eventId ? State.events.find(e => e.id === eventId) : null;
+  populateEventAppSelect();
+  document.getElementById('event-modal-title').textContent = ev ? 'Termin bearbeiten' : 'Termin hinzufügen';
+  document.getElementById('ev-id').value    = ev?.id || '';
+  document.getElementById('ev-date').value  = ev?.date || dateStr || localDateStr(new Date());
+  document.getElementById('ev-time').value  = ev?.time || '';
+  document.getElementById('ev-app').value   = ev?.appId || '';
+  document.getElementById('ev-title').value = ev?.title || '';
+  document.getElementById('ev-note').value  = ev?.note || '';
+  document.getElementById('ev-delete-btn').classList.toggle('hidden', !ev);
+  showModal('event-modal');
+  setTimeout(() => document.getElementById('ev-title').focus(), 220);
+}
+function closeEventModal() { hideModal('event-modal'); }
+
+async function submitEvent(e) {
+  e.preventDefault();
+  const title = document.getElementById('ev-title').value.trim();
+  const date  = document.getElementById('ev-date').value;
+  if (!title || !date) return false;
+  const ev = {
+    id:    document.getElementById('ev-id').value || uuid(),
+    date,
+    time:  document.getElementById('ev-time').value || null,
+    appId: document.getElementById('ev-app').value || null,
+    title,
+    note:  document.getElementById('ev-note').value.trim() || null,
+  };
+  await saveEvent(ev);
+  closeEventModal();
+  renderCalendar();
+  toast('Termin gespeichert', 'success');
+  return false;
+}
+
+async function deleteEventFromModal() {
+  const id = document.getElementById('ev-id').value;
+  if (!id) return;
+  closeEventModal();
+  const ok = await showConfirm('Termin löschen?', 'Dieser Termin wird endgültig entfernt.', 'Löschen', 'danger');
+  if (!ok) return;
+  await deleteEventById(id);
+  renderCalendar();
+  toast('Termin gelöscht', 'info');
+}
+
 // ── Settings UI ───────────────────────────────────────────────────────────────
 function updatePushSetting(key, value) {
   if (key === 'pushOnStatus') {
@@ -1946,6 +2039,7 @@ if ('serviceWorker' in navigator) {
   renderStatusSelectOptions();
   await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
   await loadAll();
+  await loadEvents();
   navigate('dashboard');
   await checkPersistence();
   handleShareTarget();
