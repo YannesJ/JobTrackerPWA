@@ -89,6 +89,8 @@
 }
 [data-theme="light"][data-skin="original"] #sidebar {
   --bg-nav:        #f9f9fc;
+  --bg-elevated:   #ffffff;
+  --bg-subtle:     #f0f0f5;
   --bg-hover:      rgba(0,0,0,.035);
   --border:        rgba(0,0,0,.08);
   --border-strong: rgba(0,0,0,.14);

@@ -163,7 +163,7 @@ const State = {
     Absage:    { col: 'applicationDate', dir: 'desc' },
     Zusage:    { col: 'applicationDate', dir: 'desc' },
   },
-  theme:  localStorage.getItem('jt-theme') || 'system',
+  theme:  localStorage.getItem('jt-theme') || 'dark',
   skin:   localStorage.getItem('jt-skin') || 'neon',
   // Persisted settings
   settings: loadSettings(),
