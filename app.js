@@ -1442,12 +1442,15 @@ function renderStatusSettings() {
   if (!el) return;
   el.innerHTML = `
     <div class="status-manage-list">
-      ${State.statuses.map((s, i) => `
+      ${State.statuses.map((s, i) => {
+        const count = State.all.filter(a => a.status === s.name).length;
+        return `
         <div class="status-manage-row">
           <input type="color" class="status-color-input" value="${escAttr(s.color)}"
             oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
           <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
             onchange="renameStatus(${i}, this.value)" placeholder="Name" />
+          <span class="status-count" title="${count} Bewerbung${count === 1 ? '' : 'en'} mit diesem Status">${count}</span>
           <div class="status-move-btns">
             <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},-1)" title="Nach oben" ${i === 0 ? 'disabled' : ''}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
@@ -1459,7 +1462,8 @@ function renderStatusSettings() {
           <button type="button" class="btn btn-icon btn-sm" onclick="deleteStatus(${i})" title="Kategorie löschen" ${State.statuses.length <= 1 ? 'disabled' : ''} style="color:var(--text-muted)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>
     <form class="status-add-row" onsubmit="return addStatus(event)">
       <input type="color" id="new-status-color" class="status-color-input" value="#6366f1" title="Farbe" />

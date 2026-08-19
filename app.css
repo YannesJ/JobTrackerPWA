@@ -979,6 +979,18 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .status-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
 .status-color-input::-webkit-color-swatch { border: none; border-radius: 5px; }
 .status-name-input { flex: 1; min-width: 0; }
+.status-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--r-full);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  font-family: var(--font-mono);
+}
 .status-move-btns { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; }
 .status-move-btns .btn { height: 15px; padding: 0; }
 .status-add-row { padding-top: 0.375rem; border-top: 1px dashed var(--border); }
