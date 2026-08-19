@@ -828,35 +828,51 @@ function showStatusMenu(e, id) {
   const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
   popover.innerHTML = STATUSES.map(s => {
     const isActive = s === a.status;
-    return `<div class="sort-popover-item${isActive?' active':''}" onclick="applyQuickStatus('${id}','${s}')">
+    return `<div class="sort-popover-item${isActive?' active':''}" onclick="applyQuickStatus('${escJs(id)}','${escJs(s)}')">
       <span style="width:16px;flex-shrink:0;opacity:${isActive?1:0}">${SVG_CHECK}</span>
-      <span class="badge ${statusClass(s)}" style="font-size:.65rem;padding:.1rem .45rem">${s}</span>
+      <span class="badge ${statusClass(s)}" style="font-size:.65rem;padding:.1rem .45rem">${escHtml(s)}</span>
     </div>`;
   }).join('');
 
-  // Find or create a positioned wrapper around the trigger button
-  const btn = e.currentTarget;
-  let anchor = btn.closest('[data-status-anchor]');
-  if (!anchor) {
-    // Wrap btn in a relative container if not already wrapped
-    const wrapper = document.createElement('div');
-    wrapper.setAttribute('data-status-anchor', '');
-    wrapper.style.cssText = 'position:relative;display:inline-flex;';
-    btn.parentNode.insertBefore(wrapper, btn);
-    wrapper.appendChild(btn);
-    anchor = wrapper;
-  }
-  anchor.appendChild(popover);
+  // Fixed-positioned & appended to <body> instead of nested in the table/card DOM:
+  // the table wrapper uses overflow:hidden (rounded corners) and its scroll container
+  // forces overflow-y:auto too, which clipped the popover whenever it opened near an
+  // edge. Positioning it in viewport coordinates escapes that clipping entirely.
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
 
-  // Close on outside click
+  const popRect     = popover.getBoundingClientRect();
+  const margin      = 8;
+  const spaceBelow  = window.innerHeight - rect.bottom;
+  const openUpward  = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(
+    Math.max(rect.right - popRect.width, margin),
+    window.innerWidth - popRect.width - margin
+  );
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.right      = 'auto';
+  popover.style.visibility = '';
+
+  // Close on outside click, scroll or resize (listeners self-clean on the next such
+  // event even if the popover was already removed elsewhere, e.g. via applyQuickStatus).
   setTimeout(() => {
-    const close = (ev) => {
-      if (!anchor.contains(ev.target)) {
-        popover.remove();
-        document.removeEventListener('click', close, true);
-      }
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
     };
-    document.addEventListener('click', close, true);
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
   }, 0);
 }
 
