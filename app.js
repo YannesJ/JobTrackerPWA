@@ -17,9 +17,18 @@ const { createStore, get: idbGet, set: idbSet, del: idbDel,
 // object store added afterwards silently fails ("object store was not found") the first
 // time it's used. All object stores this app needs must therefore be created together,
 // in one upgrade pass, before any of the createStore() instances below are first used.
+// Version must be bumped whenever a store is added — existing users' DBs are
+// already sitting at whatever version they were first created with, and
+// indexedDB.open() only fires onupgradeneeded when the requested version is
+// HIGHER than the current one. Opening at the same version again (e.g. "1"
+// forever) silently skips existing installs, leaving new stores missing for
+// them specifically — this bumped version 1→2 is what actually back-fills
+// 'events' (and 'reminders', for anyone the original bug affected) for
+// people who used the app before this store existed.
+const IDB_VERSION = 2;
 const IDB_STORE_NAMES = ['applications', 'reminders', 'events'];
 const idbReady = new Promise((resolve, reject) => {
-  const req = indexedDB.open('jobtracker', 1);
+  const req = indexedDB.open('jobtracker', IDB_VERSION);
   req.onupgradeneeded = () => {
     const db = req.result;
     IDB_STORE_NAMES.forEach(name => { if (!db.objectStoreNames.contains(name)) db.createObjectStore(name); });
@@ -2113,9 +2122,17 @@ if ('serviceWorker' in navigator) {
   }
   injectStatusStyles();
   renderStatusSelectOptions();
-  await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
+  try {
+    await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
+  } catch (err) {
+    console.error('[idbReady]', err); // z.B. blockiert durch einen anderen offenen Tab mit alter DB-Version
+  }
   await loadAll();
-  await loadEvents();
+  try {
+    await loadEvents();
+  } catch (err) {
+    console.error('[loadEvents]', err); // Kalender bleibt leer statt die ganze Init-Kette zu blockieren
+  }
   navigate('dashboard');
   await checkPersistence();
   handleShareTarget();
