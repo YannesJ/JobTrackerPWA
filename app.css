@@ -1155,14 +1155,19 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 /* Persist warning in sidebar */
 .sidebar-warn {
   display: flex; align-items: center; gap: 0.5rem;
+  width: 100%;
   background: rgba(245,158,11,.1);
   border: 1px solid rgba(245,158,11,.25);
   border-radius: var(--r-md);
   padding: 0.5rem 0.625rem;
   font-size: 0.72rem; font-weight: 600;
+  font-family: inherit;
   color: #d97706;
   margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
 }
+.sidebar-warn:hover { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.4); }
 [data-theme="dark"] .sidebar-warn { color: #fbbf24; }
 
 /* Kanban sort popover */
