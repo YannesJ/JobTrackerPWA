@@ -9,8 +9,147 @@
 // ─── idb-keyval Store ─────────────────────────────────────────────────────────
 const { createStore, get: idbGet, set: idbSet, del: idbDel,
         entries: idbEntries, clear: idbClear } = idbKeyval;
+
+// idb-keyval's createStore() opens its DB lazily and independently per store, with no
+// explicit version number. When several stores share one DB name, only whichever store
+// happens to be used FIRST actually gets its object store created — IndexedDB no-ops
+// onupgradeneeded on every later open() that doesn't request a version bump, so any
+// object store added afterwards silently fails ("object store was not found") the first
+// time it's used. All object stores this app needs must therefore be created together,
+// in one upgrade pass, before any of the createStore() instances below are first used.
+const IDB_STORE_NAMES = ['applications', 'reminders', 'events'];
+const idbReady = new Promise((resolve, reject) => {
+  const req = indexedDB.open('jobtracker', 1);
+  req.onupgradeneeded = () => {
+    const db = req.result;
+    IDB_STORE_NAMES.forEach(name => { if (!db.objectStoreNames.contains(name)) db.createObjectStore(name); });
+  };
+  req.onsuccess = () => { req.result.close(); resolve(); };
+  req.onerror   = () => reject(req.error);
+});
+
 const DB        = createStore('jobtracker', 'applications');
 const REMINDERS = createStore('jobtracker', 'reminders'); // { id, appId, date, note }
+const EVENTS    = createStore('jobtracker', 'events');    // { id, appId, date, time, title, note }
+
+// ─── Status-Kategorien (individuell konfigurierbar) ────────────────────────────
+// Muss vor `State` stehen, da State.statuses beim Erstellen bereits loadStatuses() aufruft.
+const DEFAULT_STATUSES = [
+  { name: 'Offen',     color: '#3b82f6' },
+  { name: 'Interview', color: '#f59e0b' },
+  { name: 'Absage',    color: '#ef4444' },
+  { name: 'Zusage',    color: '#22c55e' },
+];
+function loadStatuses() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-statuses') || 'null');
+    if (Array.isArray(stored) && stored.length) return stored;
+  } catch { /* ignore malformed data */ }
+  return DEFAULT_STATUSES.map(s => ({ ...s }));
+}
+function saveStatuses() {
+  localStorage.setItem('jt-statuses', JSON.stringify(State.statuses));
+}
+function getStatusColor(name) {
+  return State.statuses.find(s => s.name === name)?.color || '#8888a8';
+}
+// Index der Kategorie in State.statuses – dient als stabiler CSS-Hook (s-<i>).
+// Unbekannte/gelöschte Status fallen auf Slot 0 zurück, statt die Anzeige zu brechen.
+function statusSlot(name) {
+  const idx = State.statuses.findIndex(s => s.name === name);
+  return idx >= 0 ? idx : 0;
+}
+
+// ── Farbableitung: aus einer einzelnen Hex-Farbe werden Badge/Akzent-Farben
+//    für Hell- und Dunkel-Theme berechnet (analog zu den bisherigen fixen Paletten) ──
+function _hexToRgb(hex) {
+  const h = (hex || '#8888a8').replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0');
+  const int = parseInt(n, 16);
+  return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+}
+function _rgbToHsl({ r, g, b }) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+function _hslToRgb(h, s, l) {
+  h /= 360; s /= 100; l /= 100;
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1 / 3);
+  }
+  return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+}
+function _clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+function statusColorVars(hex) {
+  const rgb = _hexToRgb(hex);
+  const hsl = _rgbToHsl(rgb);
+  const fgL = _hslToRgb(hsl.h, Math.max(hsl.s, 50), _clamp(hsl.l, 24, 42));
+  const fgD = _hslToRgb(hsl.h, Math.max(hsl.s, 40), _clamp(hsl.l, 62, 80));
+  const rgba = ({ r, g, b }, a) => `rgba(${r},${g},${b},${a})`;
+  return {
+    bg: rgba(rgb, .10),  fg: rgba(fgL, 1), bdr: rgba(rgb, .32),
+    bgD: rgba(rgb, .16), fgD: rgba(fgD, 1), bdrD: rgba(rgb, .28),
+  };
+}
+// Erzeugt/aktualisiert ein <style>-Tag mit einer Regel pro Status-Slot,
+// damit beliebig viele individuelle Kategorien ohne feste CSS-Klassen auskommen.
+function injectStatusStyles() {
+  let styleEl = document.getElementById('dyn-status-styles');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'dyn-status-styles';
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = State.statuses.map((s, i) => {
+    const v = statusColorVars(s.color);
+    return `
+.badge-dyn.s-${i} { background:${v.bg}; color:${v.fg}; border-color:${v.bdr}; }
+[data-theme="dark"] .badge-dyn.s-${i} { background:${v.bgD}; color:${v.fgD}; border-color:${v.bdrD}; }
+.kanban-card.s-${i}::before, .app-card-accent.s-${i}, .stc-dot.s-${i} { background:${v.fg}; }
+[data-theme="dark"] .kanban-card.s-${i}::before, [data-theme="dark"] .app-card-accent.s-${i}, [data-theme="dark"] .stc-dot.s-${i} { background:${v.fgD}; }
+.tl-dyn.s-${i} { color:${v.fg}; }
+[data-theme="dark"] .tl-dyn.s-${i} { color:${v.fgD}; }`;
+  }).join('\n');
+}
+// Befüllt Status-<select>-Elemente (Filter + Formular) mit den aktuellen Kategorien.
+function renderStatusSelectOptions() {
+  const optsHtml = State.statuses.map(s => `<option value="${escAttr(s.name)}">${escHtml(s.name)}</option>`).join('');
+
+  const filterSel = document.getElementById('filter-status');
+  if (filterSel) {
+    const prev = filterSel.value;
+    filterSel.innerHTML = `<option value="">Alle</option>` + optsHtml;
+    filterSel.value = State.statuses.some(s => s.name === prev) ? prev : '';
+  }
+
+  const formSel = document.getElementById('f-status');
+  if (formSel) {
+    const prev = formSel.value;
+    formSel.innerHTML = optsHtml;
+    formSel.value = State.statuses.some(s => s.name === prev) ? prev : (State.statuses[0]?.name || '');
+  }
+}
 
 // ─── App State ────────────────────────────────────────────────────────────────
 const State = {
@@ -27,6 +166,11 @@ const State = {
   theme:  localStorage.getItem('jt-theme') || 'system',
   // Persisted settings
   settings: loadSettings(),
+  // Individuell konfigurierbare Status-Kategorien
+  statuses: loadStatuses(),
+  // Kalender-Termine
+  events: [],
+  calendarMonth: (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })(),
 };
 
 function loadSettings() {
@@ -100,13 +244,18 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function escAttr(s) { return escHtml(s); }
+// Escaped for use inside a single-quoted JS string literal within an inline
+// on*="...('${..}')" handler (status names are free text since custom categories).
+function escJs(s) {
+  return String(s ?? '')
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 function statusClass(s) {
-  const m = { Offen:'open', Interview:'interview', Absage:'absage', Zusage:'zusage' };
-  return `badge-${m[s] || 'open'}`;
+  return `badge-dyn s-${statusSlot(s)}`;
 }
 function tlClass(s) {
-  const m = { Offen:'tl-open', Interview:'tl-interview', Absage:'tl-absage', Zusage:'tl-zusage' };
-  return m[s] || 'tl-open';
+  return `tl-dyn s-${statusSlot(s)}`;
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -191,7 +340,8 @@ function navigate(tab) {
   document.querySelectorAll(`[data-nav="${tab}"]`).forEach(el => el.classList.add('active'));
   if (tab === 'dashboard')    renderDashboard();
   if (tab === 'applications') renderView();
-  if (tab === 'settings')     renderSettingsNotifications();
+  if (tab === 'calendar')     renderCalendar();
+  if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); }
   lucide.createIcons();
 }
 
@@ -408,7 +558,7 @@ function openForm(id) {
   document.getElementById('f-id').value        = app?.id || '';
   document.getElementById('f-company').value   = app?.company || '';
   document.getElementById('f-position').value  = app?.position || '';
-  document.getElementById('f-status').value    = app?.status || 'Offen';
+  document.getElementById('f-status').value    = app?.status || State.statuses[0]?.name || 'Offen';
   document.getElementById('f-source').value    = app?.source || '';
   document.getElementById('f-salary').value    = app?.expectedSalary || '';
   document.getElementById('f-date').value      = app?.applicationDate?.slice(0,10) || new Date().toISOString().slice(0,10);
@@ -648,7 +798,7 @@ async function confirmDelete(id) {
 function showStatusMenu(e, id) {
   e.stopPropagation();
   document.querySelectorAll('.status-popover').forEach(p => p.remove());
-  const STATUSES = ['Offen','Interview','Absage','Zusage'];
+  const STATUSES = State.statuses.map(s => s.name);
   const a = State.all.find(x => x.id === id);
   if (!a) return;
 
@@ -822,7 +972,7 @@ async function importCSV(e) {
         app[field] = val;
       });
       if (!app.company) continue;
-      app.status = app.status || 'Offen';
+      app.status = app.status || State.statuses[0]?.name || 'Offen';
       app.history.push({ status: app.status, timestamp: nowISO() });
       imported.push(app);
     }
@@ -1103,12 +1253,7 @@ function renderSettingsNotifications() {
   const denied    = perm === 'denied';
   const masterOn  = State.settings.pushEnabled && granted;
 
-  const STATUSES = [
-    { key: 'Interview', label: 'Interview', icon: '🎯', cls: 'badge-interview' },
-    { key: 'Zusage',    label: 'Zusage',    icon: '🎉', cls: 'badge-zusage'    },
-    { key: 'Absage',    label: 'Absage',    icon: '📭', cls: 'badge-absage'    },
-    { key: 'Offen',     label: 'Offen',     icon: '📋', cls: 'badge-open'      },
-  ];
+  const STATUSES = State.statuses.map(s => ({ key: s.name, label: s.name }));
 
   const permBanner = !supported
     ? `<div class="notif-banner notif-banner--warn">Dein Browser unterstützt keine Benachrichtigungen.</div>`
@@ -1155,8 +1300,8 @@ function renderSettingsNotifications() {
       <div class="notif-feature-label">Bei Status-Wechsel zu</div>
       ${STATUSES.map(s => `
         <label class="notif-row">
-          <div style="display:flex;align-items:center;gap:8px"><span>${s.icon}</span><span class="badge ${s.cls}" style="font-size:.7rem">${s.label}</span></div>
-          <input type="checkbox" class="toggle" ${State.settings.pushOnStatus?.[s.key] ? 'checked' : ''} onchange="updatePushSetting('pushOnStatus',{status:'${s.key}',checked:this.checked})" />
+          <div style="display:flex;align-items:center;gap:8px"><span class="badge ${statusClass(s.key)}" style="font-size:.7rem">${escHtml(s.label)}</span></div>
+          <input type="checkbox" class="toggle" ${State.settings.pushOnStatus?.[s.key] ? 'checked' : ''} onchange="updatePushSetting('pushOnStatus',{status:'${escJs(s.key)}',checked:this.checked})" />
         </label>`).join('')}
     </div>
     <div class="notif-section-divider"></div>
@@ -1164,9 +1309,9 @@ function renderSettingsNotifications() {
       <div class="notif-feature-label">Erinnerung nach Inaktivität (0 = aus)</div>
       ${STATUSES.map(s => `
         <div class="notif-row">
-          <div style="display:flex;align-items:center;gap:8px"><span>${s.icon}</span><span class="badge ${s.cls}" style="font-size:.7rem">${s.label}</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="badge ${statusClass(s.key)}" style="font-size:.7rem">${escHtml(s.label)}</span></div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-            <input type="number" class="form-input" min="0" max="90" style="width:56px;text-align:center;padding:.3rem .4rem;font-size:.82rem" value="${State.settings.staleThreshold?.[s.key] ?? 0}" onchange="updatePushSetting('staleThreshold',{status:'${s.key}',days:this.value})" />
+            <input type="number" class="form-input" min="0" max="90" style="width:56px;text-align:center;padding:.3rem .4rem;font-size:.82rem" value="${State.settings.staleThreshold?.[s.key] ?? 0}" onchange="updatePushSetting('staleThreshold',{status:'${escJs(s.key)}',days:this.value})" />
             <span style="font-size:.78rem;color:var(--text-muted)">Tage</span>
           </div>
         </div>`).join('')}
@@ -1174,6 +1319,165 @@ function renderSettingsNotifications() {
   `;
 }
 
+// ─── Status-Kategorien verwalten (Settings) ────────────────────────────────────
+function renderStatusSettings() {
+  const el = document.getElementById('status-settings-body');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="status-manage-list">
+      ${State.statuses.map((s, i) => `
+        <div class="status-manage-row">
+          <input type="color" class="status-color-input" value="${escAttr(s.color)}"
+            oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
+          <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
+            onchange="renameStatus(${i}, this.value)" placeholder="Name" />
+          <div class="status-move-btns">
+            <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},-1)" title="Nach oben" ${i === 0 ? 'disabled' : ''}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},1)" title="Nach unten" ${i === State.statuses.length - 1 ? 'disabled' : ''}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <button type="button" class="btn btn-icon btn-sm" onclick="deleteStatus(${i})" title="Kategorie löschen" ${State.statuses.length <= 1 ? 'disabled' : ''} style="color:var(--text-muted)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </div>`).join('')}
+    </div>
+    <form class="status-add-row" onsubmit="return addStatus(event)">
+      <input type="color" id="new-status-color" class="status-color-input" value="#6366f1" title="Farbe" />
+      <input type="text" id="new-status-name" class="form-input status-name-input" placeholder="Neue Kategorie …" required />
+      <button type="submit" class="btn btn-ghost btn-sm">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Hinzufügen
+      </button>
+    </form>
+  `;
+}
+
+function addStatus(e) {
+  e.preventDefault();
+  const nameEl  = document.getElementById('new-status-name');
+  const colorEl = document.getElementById('new-status-color');
+  const name = nameEl.value.trim();
+  if (!name) return false;
+  if (State.statuses.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+    toast('Diese Kategorie gibt es schon', 'warning');
+    return false;
+  }
+  State.statuses.push({ name, color: colorEl.value });
+  saveStatuses();
+  injectStatusStyles();
+  renderStatusSettings();
+  renderStatusSelectOptions();
+  renderView();
+  toast(`Kategorie „${name}“ hinzugefügt`, 'success');
+  return false;
+}
+
+function updateStatusColor(idx, color) {
+  const s = State.statuses[idx];
+  if (!s) return;
+  s.color = color;
+  saveStatuses();
+  injectStatusStyles();
+}
+
+function _renameStatusKey(obj, oldName, newName) {
+  if (obj && Object.prototype.hasOwnProperty.call(obj, oldName)) {
+    obj[newName] = obj[oldName];
+    delete obj[oldName];
+  }
+}
+
+async function renameStatus(idx, rawName) {
+  const s = State.statuses[idx];
+  if (!s) return;
+  const newName = rawName.trim();
+  const oldName = s.name;
+  if (!newName || newName === oldName) { renderStatusSettings(); return; }
+  if (State.statuses.some((o, i) => i !== idx && o.name.toLowerCase() === newName.toLowerCase())) {
+    toast('Diese Kategorie gibt es schon', 'warning');
+    renderStatusSettings();
+    return;
+  }
+
+  s.name = newName;
+  saveStatuses();
+
+  // Bestehende Bewerbungen (inkl. Verlauf) auf den neuen Namen umstellen
+  const affected = State.all.filter(a => a.status === oldName || a.history?.some(h => h.status === oldName));
+  for (const app of affected) {
+    if (app.status === oldName) app.status = newName;
+    if (app.history) app.history = app.history.map(h => h.status === oldName ? { ...h, status: newName } : h);
+    app.updatedAt = nowISO();
+    await idbSet(app.id, app, DB);
+  }
+
+  _renameStatusKey(State.settings.staleThreshold, oldName, newName);
+  _renameStatusKey(State.settings.pushOnStatus, oldName, newName);
+  _renameStatusKey(State.kanbanSort, oldName, newName);
+  saveSettings();
+
+  injectStatusStyles();
+  await loadAll();
+  renderStatusSettings();
+  renderStatusSelectOptions();
+  renderView();
+  renderSettingsNotifications();
+  toast(`„${oldName}“ umbenannt in „${newName}“`, 'success');
+}
+
+async function deleteStatus(idx) {
+  if (State.statuses.length <= 1) {
+    toast('Es muss mindestens eine Kategorie geben', 'warning');
+    return;
+  }
+  const target   = State.statuses[idx];
+  const fallback = State.statuses.find((s, i) => i !== idx)?.name;
+  const inUse    = State.all.filter(a => a.status === target.name);
+
+  if (inUse.length) {
+    const ok = await showConfirm(
+      'Kategorie löschen?',
+      `${inUse.length} Bewerbung${inUse.length === 1 ? '' : 'en'} ${inUse.length === 1 ? 'hat' : 'haben'} den Status „${target.name}“. Sie werden auf „${fallback}“ gesetzt.`,
+      'Löschen', 'danger'
+    );
+    if (!ok) return;
+    for (const app of inUse) {
+      app.status    = fallback;
+      app.history   = [...(app.history || []), { status: fallback, timestamp: nowISO() }];
+      app.updatedAt = nowISO();
+      await idbSet(app.id, app, DB);
+    }
+  }
+
+  State.statuses.splice(idx, 1);
+  saveStatuses();
+  delete State.settings.staleThreshold?.[target.name];
+  delete State.settings.pushOnStatus?.[target.name];
+  delete State.kanbanSort?.[target.name];
+  saveSettings();
+
+  injectStatusStyles();
+  await loadAll();
+  renderStatusSettings();
+  renderStatusSelectOptions();
+  renderView();
+  renderSettingsNotifications();
+  toast(`Kategorie „${target.name}“ gelöscht`, 'info');
+}
+
+function moveStatus(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= State.statuses.length) return;
+  [State.statuses[idx], State.statuses[j]] = [State.statuses[j], State.statuses[idx]];
+  saveStatuses();
+  injectStatusStyles();
+  renderStatusSettings();
+  renderStatusSelectOptions();
+  renderView();
+}
 
 // ─── Google Drive Sync ────────────────────────────────────────────────────────
 // Fill in your credentials from https://console.cloud.google.com/
@@ -1638,11 +1942,15 @@ if ('serviceWorker' in navigator) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   applyTheme(State.theme);
+  injectStatusStyles();
+  renderStatusSelectOptions();
+  await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
   await loadAll();
   navigate('dashboard');
   await checkPersistence();
   handleShareTarget();
   renderSettingsNotifications();
+  renderStatusSettings();
   lucide.createIcons();
   // Show install prompt once on first visit
   setTimeout(_maybeShowInstallModal, 1500);

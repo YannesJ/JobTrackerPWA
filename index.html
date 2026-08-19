@@ -140,7 +140,7 @@
         </div>
         <select id="filter-status" class="form-select" style="width:auto;flex-shrink:0" onchange="applyFilters()">
           <option value="">Alle</option>
-          <option>Offen</option><option>Interview</option><option>Absage</option><option>Zusage</option>
+          <!-- Optionen werden aus den individuellen Status-Kategorien befüllt: renderStatusSelectOptions() -->
         </select>
         <select id="filter-source" class="form-select" style="width:auto;flex-shrink:0" onchange="applyFilters()">
           <option value="">Alle Quellen</option>
@@ -366,7 +366,7 @@
           <div class="form-group">
             <label class="form-label" for="f-status">Status</label>
             <select id="f-status" class="form-select" onchange="toggleRejectionField()">
-              <option>Offen</option><option>Interview</option><option>Absage</option><option>Zusage</option>
+              <!-- Optionen werden aus den individuellen Status-Kategorien befüllt: renderStatusSelectOptions() -->
             </select>
           </div>
           <div class="form-group">
@@ -450,7 +450,7 @@
     <div class="modal-header">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-          <span id="d-status-badge" class="badge badge-open">Offen</span>
+          <span id="d-status-badge" class="badge badge-dyn s-0">Offen</span>
           <div style="position:relative;display:inline-flex;" data-status-anchor>
             <button id="d-status-btn" class="btn btn-ghost btn-xs" style="gap:4px;font-size:.7rem;padding:.2rem .55rem" title="Status ändern">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>

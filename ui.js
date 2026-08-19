@@ -378,14 +378,14 @@ function renderTable() {
           const dateStr = fmtDateTime(a.applicationDate);
           return `
           <div class="app-card" onclick="openDetail('${a.id}')">
-            <div class="app-card-accent app-card-accent--${a.status.toLowerCase()}"></div>
+            <div class="app-card-accent s-${statusSlot(a.status)}"></div>
             <div class="app-card-body">
               <div class="app-card-top">
                 <div class="app-card-company">
                   ${stale ? '<span class="kanban-stale-dot" title="Offen &gt;14 Tage"></span>' : ''}
                   ${escHtml(a.company)}
                 </div>
-                <span class="badge ${statusClass(a.status)} app-card-badge">${a.status}</span>
+                <span class="badge ${statusClass(a.status)} app-card-badge">${escHtml(a.status)}</span>
               </div>
               <div class="app-card-position">${escHtml(a.position)}</div>
               <div class="app-card-meta">
@@ -428,8 +428,8 @@ function renderTable() {
       <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
       <td>
         <div style="position:relative;display:inline-flex;" data-status-anchor>
-          <button class="status-pill status-pill--${a.status.toLowerCase()}" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
-            <span class="badge ${statusClass(a.status)}" style="pointer-events:none">${a.status}</span>
+          <button class="status-pill" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
+            <span class="badge ${statusClass(a.status)}" style="pointer-events:none">${escHtml(a.status)}</span>
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:.6"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
         </div>
@@ -450,12 +450,10 @@ function renderTable() {
 }
 
 // ─── Kanban ───────────────────────────────────────────────────────────────────
-const KANBAN_COLS = [
-  { status:'Offen',     dot:'var(--kanban-open-accent)', label:'Offen' },
-  { status:'Interview', dot:'var(--kanban-int-accent)',  label:'Interview' },
-  { status:'Absage',    dot:'var(--kanban-rej-accent)',  label:'Absage' },
-  { status:'Zusage',    dot:'var(--kanban-acc-accent)',  label:'Zusage' },
-];
+// Spalten ergeben sich aus den individuell konfigurierbaren Status-Kategorien.
+function getKanbanCols() {
+  return State.statuses.map(s => ({ status: s.name, dot: s.color, label: s.name }));
+}
 
 const KANBAN_SORT_OPTIONS = [
   { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
@@ -471,9 +469,9 @@ function renderKanban() {
   document.getElementById('view-kanban').classList.remove('hidden');
 
   const board = document.getElementById('kanban-board');
-  board.innerHTML = KANBAN_COLS.map(({ status, dot, label }) => {
+  board.innerHTML = getKanbanCols().map(({ status, dot, label }) => {
     const colApps = sortAppsForKanban(State.filtered.filter(a => a.status === status), status);
-    const ks = State.kanbanSort[status];
+    const ks = State.kanbanSort[status] || { col: 'applicationDate', dir: 'desc' };
     const currentSortLabel = KANBAN_SORT_OPTIONS.find(o => o.col===ks.col && o.dir===ks.dir)?.label || 'Sortierung';
 
     const cards = colApps.map(a => {
@@ -484,7 +482,7 @@ function renderKanban() {
       // Get the most recent history note to show as preview
       const lastNote = [...(a.history||[])].reverse().find(h => h.note)?.note || '';
 
-      return `<div class="kanban-card"
+      return `<div class="kanban-card s-${statusSlot(status)}"
         draggable="true"
         data-id="${a.id}"
         ondragstart="onDragStart(event,'${a.id}')"
@@ -531,12 +529,12 @@ function renderKanban() {
     return `<div>
       <div class="kanban-col-header">
         <div class="kanban-col-title">
-          <span class="kanban-col-dot" style="background:${dot}"></span>
-          ${label}
+          <span class="kanban-col-dot" style="background:${escAttr(dot)}"></span>
+          ${escHtml(label)}
           <span class="kanban-col-count">${colApps.length}</span>
         </div>
         <div style="position:relative">
-          <button class="kanban-sort-btn" onclick="toggleKanbanSortMenu(event,'${status}')" title="Sortierung">
+          <button class="kanban-sort-btn" onclick="toggleKanbanSortMenu(event,'${escJs(status)}')" title="Sortierung">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 5 19 12"/><line x1="12" y1="19" x2="12" y2="5" style="display:none"/></svg>
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
             <span class="sort-label">${currentSortLabel}</span>
@@ -544,9 +542,9 @@ function renderKanban() {
         </div>
       </div>
       <div class="kanban-col kanban-col-body"
-        data-status="${status}"
+        data-status="${escAttr(status)}"
         ondragover="onDragOver(event)"
-        ondrop="onDrop(event,'${status}')"
+        ondrop="onDrop(event,'${escJs(status)}')"
         ondragleave="onDragLeave(event)">
         ${cards || `<div style="padding:1rem 0.5rem;text-align:center;font-size:0.75rem;color:var(--text-muted)">Keine Einträge</div>`}
       </div>
@@ -561,13 +559,13 @@ function toggleKanbanSortMenu(e, status) {
   document.querySelectorAll('.sort-popover').forEach(p => p.remove());
 
   const btn = e.currentTarget;
-  const ks  = State.kanbanSort[status];
+  const ks  = State.kanbanSort[status] || { col: 'applicationDate', dir: 'desc' };
   const popover = document.createElement('div');
   popover.className = 'sort-popover';
   const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
   popover.innerHTML = KANBAN_SORT_OPTIONS.map(o => {
     const isActive = o.col===ks.col && o.dir===ks.dir;
-    return `<div class="sort-popover-item${isActive?' active':''}" onclick="sortKanbanCol('${status}','${o.col}','${o.dir}')">
+    return `<div class="sort-popover-item${isActive?' active':''}" onclick="sortKanbanCol('${escJs(status)}','${o.col}','${o.dir}')">
       <span style="width:16px;flex-shrink:0;opacity:${isActive?1:0}">${SVG_CHECK}</span>
       ${o.label}
     </div>`;

@@ -510,10 +510,8 @@ button.theme-toggle {
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.badge-open     { background: var(--status-open-bg); color: var(--status-open-fg); border-color: var(--status-open-bdr); }
-.badge-interview{ background: var(--status-int-bg);  color: var(--status-int-fg);  border-color: var(--status-int-bdr);  }
-.badge-absage   { background: var(--status-rej-bg);  color: var(--status-rej-fg);  border-color: var(--status-rej-bdr);  }
-.badge-zusage   { background: var(--status-acc-bg);  color: var(--status-acc-fg);  border-color: var(--status-acc-bdr);  }
+/* Farbige Varianten pro individueller Status-Kategorie werden zur Laufzeit als
+   `.badge-dyn.s-<i>` in ein <style id="dyn-status-styles"> injiziert (siehe app.js injectStatusStyles). */
 
 /* ─── KPI Cards ────────────────────────────────────────────────────────────── */
 .kpi-grid {
@@ -650,11 +648,12 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 /* ─── Kanban ───────────────────────────────────────────────────────────────── */
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit statt fixer Spaltenzahl: passt sich an eine beliebige Anzahl
+     individueller Status-Kategorien an, statt bei >4 Kategorien zu verzerren. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.875rem;
   align-items: start;
 }
-@media (max-width: 900px) { .kanban-board { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .kanban-board { grid-template-columns: 1fr 1fr; gap: 0.5rem; } }
 
 .kanban-col-header {
@@ -722,10 +721,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px;
 }
-.kanban-col[data-status="Offen"]     .kanban-card::before { background: var(--kanban-open-accent); }
-.kanban-col[data-status="Interview"] .kanban-card::before { background: var(--kanban-int-accent); }
-.kanban-col[data-status="Absage"]    .kanban-card::before { background: var(--kanban-rej-accent); }
-.kanban-col[data-status="Zusage"]    .kanban-card::before { background: var(--kanban-acc-accent); }
+/* Akzentfarbe pro individueller Status-Kategorie: `.kanban-card.s-<i>::before` (injiziert, siehe injectStatusStyles). */
 
 .kanban-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
 .kanban-card.dragging { opacity: 0.35; transform: scale(0.97); }
@@ -881,10 +877,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .timeline-status { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
 .timeline-ts { font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-muted); margin-top: 1px; }
 
-.tl-open      { color: var(--kanban-open-accent); }
-.tl-interview { color: var(--kanban-int-accent); }
-.tl-absage    { color: var(--kanban-rej-accent); }
-.tl-zusage    { color: var(--kanban-acc-accent); }
+/* Farbe pro individueller Status-Kategorie: `.tl-dyn.s-<i>` (injiziert, siehe injectStatusStyles). */
 
 /* ─── Filter Bar ───────────────────────────────────────────────────────────── */
 .filter-bar {
@@ -953,6 +946,26 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 }
 .settings-row-info h3 { font-size: 0.88rem; margin-bottom: 2px; }
 .settings-row-info p { font-size: 0.78rem; color: var(--text-muted); max-width: 36ch; }
+
+/* ─── Status-Kategorien verwalten (Settings) ──────────────────────────────── */
+.status-manage-list {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.status-manage-row, .status-add-row {
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.status-color-input {
+  width: 30px; height: 30px; flex-shrink: 0;
+  padding: 0; border: 1px solid var(--border-input); border-radius: var(--r-md);
+  background: none; cursor: pointer;
+}
+.status-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.status-color-input::-webkit-color-swatch { border: none; border-radius: 5px; }
+.status-name-input { flex: 1; min-width: 0; }
+.status-move-btns { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; }
+.status-move-btns .btn { height: 15px; padding: 0; }
+.status-add-row { padding-top: 0.375rem; border-top: 1px dashed var(--border); }
 
 .persist-status {
   display: flex; align-items: center; gap: 0.5rem;
@@ -1301,10 +1314,7 @@ tbody tr:hover { background: var(--bg-hover); }
   width: 4px;
   flex-shrink: 0;
 }
-.app-card-accent--offen     { background: var(--kanban-open-accent); }
-.app-card-accent--interview { background: var(--kanban-int-accent);  }
-.app-card-accent--absage    { background: var(--kanban-rej-accent);  }
-.app-card-accent--zusage    { background: var(--kanban-acc-accent);  }
+/* Farbe pro individueller Status-Kategorie: `.app-card-accent.s-<i>` (injiziert, siehe injectStatusStyles). */
 
 .app-card-body {
   flex: 1;
