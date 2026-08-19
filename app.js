@@ -1017,66 +1017,130 @@ async function exportCSV() {
   toast(`${data.length} Einträge als CSV exportiert`, 'success');
 }
 
+// Spalten\u00FCberschriften (Zeile 1, Gro\u00DF-/Kleinschreibung egal), die beim CSV/Excel-Import
+// erkannt werden. Nur "Firma" ist Pflicht \u2014 alle anderen Spalten sind optional und
+// unbekannte Spalten werden einfach ignoriert. Auch f\u00FCr den Info-Popover verwendet.
+const IMPORT_COL_MAP = {
+  firma:'company', position:'position', status:'status', quelle:'source',
+  datum:'applicationDate', gehalt:'expectedSalary', absagegrund:'rejectionReason',
+  ansprechpartner:'contactName', telefon:'contactPhone', 'e-mail':'contactEmail',
+  stellenanzeige:'platformLink', unterlagen:'documentLink', notizen:'notes',
+};
+
+function parseDelimitedLine(line, delim) {
+  const result = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"' && !inQ) { inQ = true; }
+    else if (ch === '"' && inQ && line[i+1] === '"') { cur += '"'; i++; }
+    else if (ch === '"' && inQ) { inQ = false; }
+    else if (ch === delim && !inQ) { result.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  result.push(cur);
+  return result;
+}
+
+// Liest eine CSV/TSV- oder echte .xlsx/.xls-Datei ein und gibt sie einheitlich als
+// Array von Zeilen (je ein Array von Zellwerten, Zeile 0 = Kopfzeile) zur\u00FCck.
+async function parseSpreadsheetRows(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    const buf   = await file.arrayBuffer();
+    const wb    = XLSX.read(buf, { type: 'array', cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    // dateNF sorgt daf\u00FCr, dass echte Datumszellen als YYYY-MM-DD ankommen, egal
+    // welches Anzeigeformat die Excel-Datei selbst f\u00FCr die Spalte nutzt.
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' });
+  }
+  const text  = await file.text();
+  const clean = text.replace(/^\uFEFF/, '');
+  const lines = clean.split(/\r?\n/).filter(l => l.trim());
+  const delim = name.endsWith('.tsv') ? '\t' : ';';
+  return lines.map(line => parseDelimitedLine(line, delim));
+}
+
+function spreadsheetRowsToApplications(rows) {
+  if (rows.length < 2) throw new Error('Keine Daten gefunden');
+  const header = rows[0].map(h => String(h ?? '').replace(/^"|"$/g, '').trim().toLowerCase());
+
+  const imported = [];
+  for (let i = 1; i < rows.length; i++) {
+    const vals = rows[i];
+    if (!vals || !vals.length) continue;
+    const app = { id: uuid(), createdAt: nowISO(), updatedAt: nowISO(), history: [] };
+    header.forEach((h, idx) => {
+      const field = IMPORT_COL_MAP[h];
+      if (!field) return;
+      let val = String(vals[idx] ?? '');
+      if (field === 'expectedSalary') val = Number(val.replace(/[^0-9]/g,'')) || null;
+      else val = val.trim() || null;
+      app[field] = val;
+    });
+    if (!app.company) continue;
+    app.status = app.status || State.statuses[0]?.name || 'Offen';
+    app.history.push({ status: app.status, timestamp: nowISO() });
+    imported.push(app);
+  }
+  return imported;
+}
+
+// \u2500\u2500\u2500 Import-Format-Hinweis (Popover) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+function toggleImportInfo(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.import-info-popover').forEach(p => p.remove());
+
+  const descriptions = {
+    company:'Firmenname', position:'Jobtitel', status:'z.B. Offen/Interview\u2026', source:'z.B. LinkedIn',
+    applicationDate:'Datum (JJJJ-MM-TT)', expectedSalary:'Zahl', rejectionReason:'Text',
+    contactName:'Text', contactPhone:'Text', contactEmail:'Text', platformLink:'URL',
+    documentLink:'URL', notes:'Text',
+  };
+  const rows = Object.entries(IMPORT_COL_MAP).map(([col, field]) => {
+    const label = col === 'firma' ? 'Firma *' : col.charAt(0).toUpperCase() + col.slice(1);
+    return `<div class="import-info-row"><span>${escHtml(label)}</span><span>${escHtml(descriptions[field] || '')}</span></div>`;
+  }).join('');
+
+  const popover = document.createElement('div');
+  popover.className = 'sort-popover status-popover import-info-popover';
+  popover.innerHTML = `
+    <div style="padding:.75rem .875rem;max-width:280px">
+      <div style="font-weight:700;font-size:.78rem;margin-bottom:.5rem">Erwartetes Spaltenformat</div>
+      <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:.5rem">Erste Zeile = \u00DCberschriften (Gro\u00DF-/Kleinschreibung egal). Nur <strong>Firma</strong> ist Pflicht, unbekannte Spalten werden ignoriert.</p>
+      <div class="import-info-table">${rows}</div>
+    </div>
+  `;
+
+  const anchor = e.currentTarget.closest('[data-status-anchor]');
+  (anchor || e.currentTarget.parentNode).appendChild(popover);
+
+  setTimeout(() => {
+    const close = (ev) => {
+      if (!popover.contains(ev.target) && ev.target !== e.currentTarget) {
+        popover.remove();
+        document.removeEventListener('click', close, true);
+      }
+    };
+    document.addEventListener('click', close, true);
+  }, 0);
+}
+
 async function importCSV(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const text  = await file.text();
-    // Strip BOM, split lines
-    const clean = text.replace(/^\uFEFF/, '');
-    const lines = clean.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) throw new Error('Keine Daten gefunden');
-
-    const header = lines[0].split(';').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
-    const colMap = {
-      firma:'company', position:'position', status:'status', quelle:'source',
-      datum:'applicationDate', gehalt:'expectedSalary', absagegrund:'rejectionReason',
-      ansprechpartner:'contactName', telefon:'contactPhone', 'e-mail':'contactEmail',
-      stellenanzeige:'platformLink', unterlagen:'documentLink', notizen:'notes',
-    };
-
-    const parseCSVLine = (line) => {
-      const result = []; let cur = ''; let inQ = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"' && !inQ) { inQ = true; }
-        else if (ch === '"' && inQ && line[i+1] === '"') { cur += '"'; i++; }
-        else if (ch === '"' && inQ) { inQ = false; }
-        else if (ch === ';' && !inQ) { result.push(cur); cur = ''; }
-        else cur += ch;
-      }
-      result.push(cur);
-      return result;
-    };
-
-    const imported = [];
-    for (let i = 1; i < lines.length; i++) {
-      const vals = parseCSVLine(lines[i]);
-      const app  = { id: uuid(), createdAt: nowISO(), updatedAt: nowISO(), history: [] };
-      header.forEach((h, idx) => {
-        const field = colMap[h];
-        if (!field) return;
-        let val = vals[idx] ?? '';
-        if (field === 'expectedSalary') val = Number(val.replace(/[^0-9]/g,'')) || null;
-        else val = val.trim() || null;
-        app[field] = val;
-      });
-      if (!app.company) continue;
-      app.status = app.status || State.statuses[0]?.name || 'Offen';
-      app.history.push({ status: app.status, timestamp: nowISO() });
-      imported.push(app);
-    }
+    const rows     = await parseSpreadsheetRows(file);
+    const imported = spreadsheetRowsToApplications(rows);
     if (!imported.length) throw new Error('Keine gültigen Zeilen gefunden');
     await idbClear(DB);
     for (const app of imported) await idbSet(app.id, app, DB);
     await loadAll();
-    toast(`${imported.length} Einträge aus CSV importiert ✓`, 'success');
+    toast(`${imported.length} Einträge importiert ✓`, 'success');
   } catch (err) {
-    toast('CSV-Import fehlgeschlagen: ' + err.message, 'error');
+    toast('Import fehlgeschlagen: ' + err.message, 'error');
   }
   e.target.value = '';
 }
-
 async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;

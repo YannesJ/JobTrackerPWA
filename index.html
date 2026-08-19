@@ -258,8 +258,8 @@
       <div class="settings-section">
         <div class="settings-section-title">Offline-Backup</div>
         <div class="card card-sm">
-          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.875rem">Exportiere alle Daten als JSON oder CSV (Excel-kompatibel). Import überschreibt alle vorhandenen Daten.</p>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.875rem">Exportiere alle Daten als JSON oder CSV/Excel. Import überschreibt alle vorhandenen Daten.</p>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
             <button class="btn btn-ghost btn-sm" onclick="exportData()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               JSON
@@ -275,9 +275,14 @@
             </label>
             <label class="btn btn-ghost btn-sm" style="cursor:pointer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Import CSV
-              <input type="file" accept=".csv,.tsv" style="display:none" onchange="importCSV(event)" />
+              Import CSV / Excel
+              <input type="file" accept=".csv,.tsv,.xlsx,.xls" style="display:none" onchange="importCSV(event)" />
             </label>
+            <div style="position:relative" data-status-anchor>
+              <button type="button" class="btn btn-icon btn-sm" onclick="toggleImportInfo(event)" title="Welches Spaltenformat wird erwartet?">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -791,6 +796,7 @@
 <script src="https://unpkg.com/idb-keyval@6/dist/umd.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 <script src="ui.js"></script>
 <script>
