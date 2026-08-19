@@ -1429,6 +1429,14 @@ function renderSettingsNotifications() {
 }
 
 // ─── Status-Kategorien verwalten (Settings) ────────────────────────────────────
+function toggleStatusSettings() {
+  const expand = document.getElementById('status-settings-expand');
+  const btn    = document.getElementById('status-settings-toggle-btn');
+  if (!expand) return;
+  const open = expand.classList.toggle('open');
+  const label = btn?.childNodes[btn.childNodes.length - 1];
+  if (label) label.textContent = open ? ' Fertig' : ' Bearbeiten';
+}
 function renderStatusSettings() {
   const el = document.getElementById('status-settings-body');
   if (!el) return;

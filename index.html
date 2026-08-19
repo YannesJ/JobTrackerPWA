@@ -279,19 +279,30 @@
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Benachrichtigungen</div>
-        <div class="card card-sm" id="notif-settings-body">
-          <!-- filled by renderSettingsNotifications() -->
+        <div class="settings-section-title">Status-Kategorien</div>
+        <div class="card card-sm">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <h3>Eigene Status verwalten</h3>
+              <p>Kategorien mit Farbe anlegen, umbenennen oder sortieren – erscheinen in Liste, Kanban und Formular.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="status-settings-toggle-btn" onclick="toggleStatusSettings()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Bearbeiten
+            </button>
+          </div>
+          <div id="status-settings-expand" class="status-settings-expand">
+            <div id="status-settings-body" style="margin-top:0.875rem">
+              <!-- filled by renderStatusSettings() -->
+            </div>
+          </div>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Status-Kategorien</div>
-        <div class="card card-sm">
-          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.875rem">Lege eigene Bewerbungsstatus mit Farbe an, benenne sie um oder sortiere sie – sie erscheinen in Liste, Kanban und Formular.</p>
-          <div id="status-settings-body">
-            <!-- filled by renderStatusSettings() -->
-          </div>
+        <div class="settings-section-title">Benachrichtigungen</div>
+        <div class="card card-sm" id="notif-settings-body">
+          <!-- filled by renderSettingsNotifications() -->
         </div>
       </div>
 

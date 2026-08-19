@@ -958,6 +958,12 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .settings-row-info p { font-size: 0.78rem; color: var(--text-muted); max-width: 36ch; }
 
 /* ─── Status-Kategorien verwalten (Settings) ──────────────────────────────── */
+.status-settings-expand {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height var(--t-spring);
+}
+.status-settings-expand.open { max-height: 900px; }
 .status-manage-list {
   display: flex; flex-direction: column; gap: 0.5rem;
   margin-bottom: 0.75rem;
