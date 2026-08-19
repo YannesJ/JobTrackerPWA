@@ -526,7 +526,7 @@ function renderKanban() {
       </div>`;
     }).join('');
 
-    return `<div>
+    return `<div class="kanban-column">
       <div class="kanban-col-header">
         <div class="kanban-col-title">
           <span class="kanban-col-dot" style="background:${escAttr(dot)}"></span>

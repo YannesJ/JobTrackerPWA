@@ -657,14 +657,17 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 
 /* ─── Kanban ───────────────────────────────────────────────────────────────── */
 .kanban-board {
-  display: grid;
-  /* auto-fit statt fixer Spaltenzahl: passt sich an eine beliebige Anzahl
-     individueller Status-Kategorien an, statt bei >4 Kategorien zu verzerren. */
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  /* Immer horizontal: beim Verschieben einer Bewerbung in "den nächsten Status"
+     bleibt die Richtung intuitiv. Bei vielen individuellen Kategorien wird
+     gescrollt statt in eine zweite Zeile umzubrechen. */
   gap: 0.875rem;
   align-items: start;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
 }
-@media (max-width: 480px) { .kanban-board { grid-template-columns: 1fr 1fr; gap: 0.5rem; } }
+.kanban-column { flex: 1 0 220px; min-width: 220px; }
+@media (max-width: 480px) { .kanban-board { gap: 0.5rem; } .kanban-column { flex-basis: 78vw; min-width: 78vw; } }
 
 .kanban-col-header {
   display: flex;
