@@ -1,7 +1,5 @@
 /*
- * Copyright 2024 Job Application Tracker Contributors
- * Licensed under the Apache License, Version 2.0
- * http://www.apache.org/licenses/LICENSE-2.0
+ * Copyright 2026 Yannes Jabboury. Alle Rechte vorbehalten. All rights reserved.
  */
 
 'use strict';

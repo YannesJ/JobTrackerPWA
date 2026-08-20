@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /*
- * Copyright 2024 Job Application Tracker Contributors
- * Licensed under the Apache License, Version 2.0
+ * Copyright 2026 Yannes Jabboury. Alle Rechte vorbehalten. All rights reserved.
  *
  * Zero-dependency smoke test suite. Runs with plain `node tests/run.js` -
  * no npm install, no test framework, nothing to download. It loads app.js

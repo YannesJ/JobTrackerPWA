@@ -1,0 +1,11 @@
+Copyright 2026 Yannes Jabboury
+
+All rights reserved.
+
+This source code is proprietary. No part of it may be copied, modified,
+distributed, sublicensed, or used, in whole or in part, for any purpose
+without the prior written permission of the copyright holder.
+
+Third-party components vendored under vendor/ remain under their own
+respective licenses (see the LICENSE file in each vendor/<package>/
+directory); this notice does not apply to them.
