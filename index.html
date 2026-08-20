@@ -11,10 +11,30 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="JobTracker" />
-  <meta name="description" content="Serverloser PWA Bewerbungstracker" />
+  <meta name="theme-color" content="#151514" />
+  <meta name="description" content="Bewerbungen im Blick behalten - Status, Termine, Gehalt, alles an einem Ort. Ohne Anmeldung, ohne Cloud - alles bleibt auf deinem Gerät." />
   <title>JobTracker</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- Vorschaubild fürs Teilen (WhatsApp, Slack, X, Discord, iMessage, ...) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="JobTracker" />
+  <meta property="og:title" content="JobTracker" />
+  <meta property="og:description" content="Bewerbungen im Blick behalten - Status, Termine, Gehalt, alles an einem Ort. Ohne Anmeldung, ohne Cloud - alles bleibt auf deinem Gerät." />
+  <meta property="og:url" content="https://yannesj.github.io/JobTrackerPWA/" />
+  <meta property="og:image" content="https://yannesj.github.io/JobTrackerPWA/icons/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="JobTracker" />
+  <meta name="twitter:description" content="Bewerbungen im Blick behalten - Status, Termine, Gehalt, alles an einem Ort." />
+  <meta name="twitter:image" content="https://yannesj.github.io/JobTrackerPWA/icons/og-image.png" />
+
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
@@ -311,13 +331,13 @@
 
       <div class="info-block">
         <div class="info-row">
-          <p class="info-row-text">JobTracker hilft dir, deine Bewerbungen im Blick zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Ganz ohne Account, ganz ohne Anmeldung.</p>
+          <p class="info-row-text">JobTracker hilft dir, deine Bewerbungen im Blick zu behalten - von der ersten Bewerbung bis zur Zu- oder Absage. Ganz ohne Account, ganz ohne Anmeldung.</p>
         </div>
         <div class="info-row">
-          <p class="info-row-text">Deine Daten werden nur auf diesem einen Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto dahinter – niemand außer dir sieht sie, nichts wird automatisch hochgeladen.</p>
+          <p class="info-row-text">Deine Daten werden nur auf diesem einen Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto dahinter - niemand außer dir sieht sie, nichts wird automatisch hochgeladen.</p>
         </div>
         <div class="info-row">
-          <p class="info-row-text">Der Nachteil: Handy und Laptop führen dadurch getrennte Listen. Ein Eintrag vom Handy taucht nicht von selbst auf dem Laptop auf – dafür gleichst du beide Geräte per Export/Import ab (siehe „Mehrere Geräte" unten).</p>
+          <p class="info-row-text">Der Nachteil: Handy und Laptop führen dadurch getrennte Listen. Ein Eintrag vom Handy taucht nicht von selbst auf dem Laptop auf - dafür gleichst du beide Geräte per Export/Import ab (siehe „Mehrere Geräte" unten).</p>
         </div>
       </div>
 
@@ -329,7 +349,7 @@
           </div>
           <div>
             <div class="info-row-title">Tabelle &amp; Kanban</div>
-            <div class="info-row-desc">Liste oder Karten-Board – umschaltbar auf der Seite „Bewerbungen".</div>
+            <div class="info-row-desc">Liste oder Karten-Board - umschaltbar auf der Seite „Bewerbungen".</div>
           </div>
         </div>
         <div class="info-row">
@@ -356,7 +376,7 @@
           </div>
           <div>
             <div class="info-row-title">Gehalt verbergen</div>
-            <div class="info-row-desc">Blendet Gehaltsangaben aus – praktisch zum Zeigen an andere.</div>
+            <div class="info-row-desc">Blendet Gehaltsangaben aus - praktisch zum Zeigen an andere.</div>
           </div>
         </div>
         <div class="info-row">
@@ -460,7 +480,7 @@
           <div class="settings-row">
             <div class="settings-row-info">
               <h3>Eigene Status verwalten</h3>
-              <p>Kategorien mit Farbe anlegen, umbenennen oder sortieren – erscheinen in Liste, Kanban und Formular.</p>
+              <p>Kategorien mit Farbe anlegen, umbenennen oder sortieren - erscheinen in Liste, Kanban und Formular.</p>
             </div>
             <button class="btn btn-ghost btn-sm" id="status-settings-toggle-btn" onclick="toggleStatusSettings()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -533,7 +553,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 Google Drive
               </h3>
-              <p>Backup im privaten <code style="font-size:.75rem;background:var(--bg-subtle);padding:1px 5px;border-radius:4px">appDataFolder</code> speichern – kein Zugriff auf dein restliches Drive.</p>
+              <p>Backup im privaten <code style="font-size:.75rem;background:var(--bg-subtle);padding:1px 5px;border-radius:4px">appDataFolder</code> speichern - kein Zugriff auf dein restliches Drive.</p>
               <div id="gd-status" style="margin-top:5px"></div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
@@ -700,7 +720,7 @@
           <div class="form-group col-span-2" id="f-history-note-group">
             <label class="form-label" for="f-history-note">
               Verlaufsnotiz
-              <span style="font-weight:400;color:var(--text-muted);margin-left:4px">— erscheint im Verlauf</span>
+              <span style="font-weight:400;color:var(--text-muted);margin-left:4px">- erscheint im Verlauf</span>
             </label>
             <input id="f-history-note" type="text" class="form-input"
               placeholder="z.B. Erstes Gespräch mit HR, 2. Runde eingeplant…"
@@ -764,10 +784,10 @@
     <div class="modal-body">
       <div class="detail-section" style="position:relative">
         <div class="detail-grid">
-          <div><div class="detail-item-label">Quelle</div><div class="detail-item-value" id="d-source">–</div></div>
-          <div><div class="detail-item-label">Datum</div><div class="detail-item-value mono" id="d-date">–</div></div>
-          <div><div class="detail-item-label">Wunschgehalt</div><div class="detail-item-value mono jt-money" id="d-salary">–</div></div>
-          <div><div class="detail-item-label">Absagegrund</div><div class="detail-item-value" id="d-rejection">–</div></div>
+          <div><div class="detail-item-label">Quelle</div><div class="detail-item-value" id="d-source">-</div></div>
+          <div><div class="detail-item-label">Datum</div><div class="detail-item-value mono" id="d-date">-</div></div>
+          <div><div class="detail-item-label">Wunschgehalt</div><div class="detail-item-value mono jt-money" id="d-salary">-</div></div>
+          <div><div class="detail-item-label">Absagegrund</div><div class="detail-item-value" id="d-rejection">-</div></div>
         </div>
       </div>
       <!-- Ansprechpartner -->
@@ -777,9 +797,9 @@
           Ansprechpartner
         </div>
         <div class="detail-contact-grid">
-          <div><div class="detail-item-label">Name</div><div class="detail-item-value" id="d-contact-name">–</div></div>
-          <div><div class="detail-item-label">Telefon</div><div class="detail-item-value" id="d-contact-phone">–</div></div>
-          <div class="contact-email-row"><div class="detail-item-label">E-Mail</div><div class="detail-item-value" id="d-contact-email">–</div></div>
+          <div><div class="detail-item-label">Name</div><div class="detail-item-value" id="d-contact-name">-</div></div>
+          <div><div class="detail-item-label">Telefon</div><div class="detail-item-value" id="d-contact-phone">-</div></div>
+          <div class="contact-email-row"><div class="detail-item-label">E-Mail</div><div class="detail-item-value" id="d-contact-email">-</div></div>
         </div>
       </div>
       <div id="d-links" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem"></div>
@@ -863,7 +883,7 @@
         <div class="form-group" style="margin-top:.75rem">
           <label class="form-label" for="ev-app">Bewerbung</label>
           <select id="ev-app" class="form-select">
-            <option value="">– keine Verknüpfung –</option>
+            <option value="">- keine Verknüpfung -</option>
           </select>
         </div>
         <div class="form-group" style="margin-top:.75rem">
@@ -921,7 +941,7 @@
   </div>
 </div>
 
-<!-- CUSTOM CONFIRM MODAL (replaces window.confirm – works in iOS PWA standalone) -->
+<!-- CUSTOM CONFIRM MODAL (replaces window.confirm - works in iOS PWA standalone) -->
 <div id="confirm-modal" class="modal-backdrop hidden" onclick="if(event.target===this){hideModal('confirm-modal')}">
   <div class="modal-box" style="max-width:360px">
     <div class="modal-header">
@@ -946,14 +966,14 @@
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
         <h2>Nie wieder den Überblick verlieren</h2>
-        <p>Mit JobTracker hast du alle deine Bewerbungen an einem Ort: Status, Termine, Gehalt und Notizen – übersichtlich statt verstreut in E-Mails und Zetteln.</p>
+        <p>Mit JobTracker hast du alle deine Bewerbungen an einem Ort: Status, Termine, Gehalt und Notizen - übersichtlich statt verstreut in E-Mails und Zetteln.</p>
       </div>
       <div class="onboarding-slide" data-ob-slide="1">
         <div class="onboarding-icon">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
         <h2>Deine Daten bleiben bei dir</h2>
-        <p>Alles wird nur auf diesem Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto – niemand außer dir sieht deine Daten.</p>
+        <p>Alles wird nur auf diesem Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto - niemand außer dir sieht deine Daten.</p>
       </div>
       <div class="onboarding-slide" data-ob-slide="2">
         <div class="onboarding-icon">
@@ -1048,7 +1068,7 @@
 
 <!-- defer: lets the browser paint the static shell immediately instead of blocking on
      these CDN fetches (DNS + TLS handshake) before any HTML below <head> can render.
-     xlsx.full.min.js (~900KB) is NOT loaded here at all — it's only needed for
+     xlsx.full.min.js (~900KB) is NOT loaded here at all - it's only needed for
      CSV/Excel import and is fetched on demand, see _ensureXLSX() in app.js. -->
 <script src="https://unpkg.com/idb-keyval@6/dist/umd.js" defer></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>

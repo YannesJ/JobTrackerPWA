@@ -12,17 +12,17 @@ const { createStore, get: idbGet, set: idbSet, del: idbDel,
 
 // idb-keyval's createStore() opens its DB lazily and independently per store, with no
 // explicit version number. When several stores share one DB name, only whichever store
-// happens to be used FIRST actually gets its object store created — IndexedDB no-ops
+// happens to be used FIRST actually gets its object store created - IndexedDB no-ops
 // onupgradeneeded on every later open() that doesn't request a version bump, so any
 // object store added afterwards silently fails ("object store was not found") the first
 // time it's used. All object stores this app needs must therefore be created together,
 // in one upgrade pass, before any of the createStore() instances below are first used.
-// Version must be bumped whenever a store is added — existing users' DBs are
+// Version must be bumped whenever a store is added - existing users' DBs are
 // already sitting at whatever version they were first created with, and
 // indexedDB.open() only fires onupgradeneeded when the requested version is
 // HIGHER than the current one. Opening at the same version again (e.g. "1"
 // forever) silently skips existing installs, leaving new stores missing for
-// them specifically — this bumped version 1→2 is what actually back-fills
+// them specifically - this bumped version 1→2 is what actually back-fills
 // 'events' (and 'reminders', for anyone the original bug affected) for
 // people who used the app before this store existed.
 const IDB_VERSION = 2;
@@ -62,7 +62,7 @@ function saveStatuses() {
 function getStatusColor(name) {
   return State.statuses.find(s => s.name === name)?.color || '#8888a8';
 }
-// Index der Kategorie in State.statuses – dient als stabiler CSS-Hook (s-<i>).
+// Index der Kategorie in State.statuses - dient als stabiler CSS-Hook (s-<i>).
 // Unbekannte/gelöschte Status fallen auf Slot 0 zurück, statt die Anzeige zu brechen.
 function statusSlot(name) {
   const idx = State.statuses.findIndex(s => s.name === name);
@@ -189,9 +189,9 @@ function loadSettings() {
     const stored = JSON.parse(localStorage.getItem('jt-settings') || 'null');
     const defaults = {
       weeklyGoal:   5,
-      pushEnabled:  false,   // master toggle — default OFF
-      badgeEnabled: false,   // app badge — default OFF
-      weeklySummary: false,  // weekly digest — default OFF
+      pushEnabled:  false,   // master toggle - default OFF
+      badgeEnabled: false,   // app badge - default OFF
+      weeklySummary: false,  // weekly digest - default OFF
       followUpDays: 0,       // auto follow-up after N days (0 = off)
       staleThreshold: { Offen: 14, Interview: 7, Absage: 0, Zusage: 0 },
       pushOnStatus:   { Offen: false, Interview: true, Absage: true, Zusage: true },
@@ -210,18 +210,18 @@ function uuid() {
     (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
 }
 function nowISO()  { return new Date().toISOString(); }
-// YYYY-MM-DD aus den LOKALEN Datumsfeldern – anders als toISOString() (UTC-basiert)
+// YYYY-MM-DD aus den LOKALEN Datumsfeldern - anders als toISOString() (UTC-basiert)
 // verschiebt das den Tag nicht in Zeitzonen abseits von UTC (z.B. Kalender-Zellen).
 function localDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function fmtDate(iso) {
-  if (!iso) return '–';
+  if (!iso) return '-';
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
 function fmtDateTime(iso) {
-  if (!iso) return '–';
+  if (!iso) return '-';
   // YYYY-MM-DD strings parse as UTC midnight → adding local time offset shows wrong time
   // Only show time when there's an actual time component (ISO with 'T')
   const hasTime = typeof iso === 'string' && iso.includes('T');
@@ -232,16 +232,16 @@ function fmtDateTime(iso) {
        + ', ' + d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }) + ' Uhr';
 }
 function fmtDateShort(iso) {
-  if (!iso) return '–';
+  if (!iso) return '-';
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
 }
 function fmtEuro(n) {
-  if (!n) return '–';
+  if (!n) return '-';
   return new Intl.NumberFormat('de-DE', { style:'currency', currency:'EUR', maximumFractionDigits:0 }).format(n);
 }
 function fmtEuroShort(n) {
-  if (!n) return '–';
+  if (!n) return '-';
   if (n >= 1000) return (n/1000).toFixed(0) + 'k €';
   return n + ' €';
 }
@@ -416,7 +416,7 @@ async function deleteApp(id) {
 // Läuft nur EIN einziges Mal überhaupt, gesteuert über das jt-demo-seeded-Flag,
 // und schreibt nur, wenn zu diesem Zeitpunkt noch gar keine Bewerbung existiert.
 // Bestehende Nutzer mit eigenen Daten sind dadurch sicher, und zwar dauerhaft:
-// Das Flag wird gesetzt, BEVOR geprüft wird ob leer geschrieben werden darf – ein
+// Das Flag wird gesetzt, BEVOR geprüft wird ob leer geschrieben werden darf - ein
 // späteres Leeren der Liste (z.B. "Alle Daten löschen") lässt die Demo-Daten also
 // nicht wieder auftauchen, weil dieser Check dann schon "erledigt" ist.
 async function maybeSeedDemoData() {
@@ -426,7 +426,7 @@ async function maybeSeedDemoData() {
 
   const daysAgo    = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); };
   const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); };
-  const demoNote   = 'Demo-Eintrag – kann jederzeit gelöscht werden.';
+  const demoNote   = 'Demo-Eintrag - kann jederzeit gelöscht werden.';
 
   const demoApps = [
     {
@@ -821,13 +821,13 @@ function openDetail(id) {
   document.getElementById('d-company').textContent  = a.company;
   document.getElementById('d-position').textContent = a.position;
 
-  // Research buttons — set onclick with current data
+  // Research buttons - set onclick with current data
   const btnEmployer = document.getElementById('d-research-employer');
   const btnSalary   = document.getElementById('d-research-salary');
   if (btnEmployer) btnEmployer.onclick = (e) => { e.stopPropagation(); searchEmployer(a.company); };
   if (btnSalary)   btnSalary.onclick   = (e) => { e.stopPropagation(); searchSalary(a.position, a.source); };
 
-  // Bell — manual reminder
+  // Bell - manual reminder
   const btnBell = document.getElementById('d-bell-btn');
   if (btnBell) {
     btnBell.onclick = (e) => { e.stopPropagation(); openReminderModal(id); };
@@ -842,7 +842,7 @@ function openDetail(id) {
   badge.textContent = a.status;
   badge.className   = `badge ${statusClass(a.status)}`;
 
-  // Reminder — settings-based threshold per status
+  // Reminder - settings-based threshold per status
   const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
   const threshold = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
   const isStale   = threshold > 0 && daysSince(lastTs) > threshold;
@@ -855,18 +855,18 @@ function openDetail(id) {
   }
 
   // Details
-  document.getElementById('d-source').textContent    = a.source || '–';
+  document.getElementById('d-source').textContent    = a.source || '-';
   document.getElementById('d-date').textContent      = fmtDateTime(a.applicationDate);
   document.getElementById('d-salary').textContent    = fmtEuro(a.expectedSalary);
-  document.getElementById('d-rejection').textContent = a.rejectionReason || '–';
+  document.getElementById('d-rejection').textContent = a.rejectionReason || '-';
 
   // Contact
   const contactSec = document.getElementById('d-contact-section');
   if (a.contactName || a.contactPhone || a.contactEmail) {
     contactSec.classList.remove('hidden');
-    document.getElementById('d-contact-name').textContent  = a.contactName  || '–';
-    document.getElementById('d-contact-phone').textContent = a.contactPhone || '–';
-    document.getElementById('d-contact-email').textContent = a.contactEmail || '–';
+    document.getElementById('d-contact-name').textContent  = a.contactName  || '-';
+    document.getElementById('d-contact-phone').textContent = a.contactPhone || '-';
+    document.getElementById('d-contact-email').textContent = a.contactEmail || '-';
     // Make phone/email clickable
     const ph = document.getElementById('d-contact-phone');
     if (a.contactPhone) ph.innerHTML = `<a href="tel:${escAttr(a.contactPhone)}" style="color:var(--accent)">${escHtml(a.contactPhone)}</a>`;
@@ -985,7 +985,7 @@ function _jsSaveSelectedPortals() {
   localStorage.setItem('jt-job-portals', JSON.stringify(_jsSelectedPortals()));
 }
 
-/** Restore checked state from localStorage (default: all checked) — called when the page opens */
+/** Restore checked state from localStorage (default: all checked) - called when the page opens */
 function _jsRestorePortalSelection() {
   const saved = JSON.parse(localStorage.getItem('jt-job-portals') || 'null');
   if (!Array.isArray(saved)) return;
@@ -1012,7 +1012,7 @@ async function confirmDelete(id) {
   if (!a) return;
   const ok = await showConfirm(
     'Bewerbung löschen?',
-    `"${a.company} – ${a.position}" wird unwiderruflich entfernt.`,
+    `"${a.company} - ${a.position}" wird unwiderruflich entfernt.`,
     'Löschen', 'danger'
   );
   if (ok) deleteApp(id);
@@ -1079,7 +1079,7 @@ function showStatusMenu(e, id) {
   }, 0);
 }
 
-// ─── Custom Confirm Dialog (replaces window.confirm – works in iOS PWA) ───────
+// ─── Custom Confirm Dialog (replaces window.confirm - works in iOS PWA) ───────
 function showConfirm(title, message, okLabel = 'OK', variant = 'primary') {
   return new Promise(resolve => {
     const el = document.getElementById('confirm-modal');
@@ -1120,7 +1120,7 @@ async function checkPersistence() {
     if (sideWarn) sideWarn.classList.add('hidden');
   } else {
     if (dot)    { dot.className = 'persist-dot warn'; }
-    if (status) status.textContent = 'Nicht geschützt – Daten können gelöscht werden';
+    if (status) status.textContent = 'Nicht geschützt - Daten können gelöscht werden';
     if (sideWarn) sideWarn.classList.remove('hidden');
   }
 }
@@ -1362,7 +1362,7 @@ async function requestPushPermission() {
   if (!notifSupported()) { toast('Dein Browser unterstützt keine Benachrichtigungen.', 'warning'); return false; }
   const perm = notifPermission();
   if (perm === 'denied') {
-    toast('Benachrichtigungen in Systemeinstellungen blockiert – dort freigeben.', 'warning');
+    toast('Benachrichtigungen in Systemeinstellungen blockiert - dort freigeben.', 'warning');
     renderSettingsNotifications(); return false;
   }
   if (perm === 'granted') {
@@ -1403,7 +1403,7 @@ function fireNotification(title, body, tag, appId) {
       // Fallback: direct Notification API (SW not yet active / first load)
       new Notification(title, { body, icon: payload.icon, tag: payload.tag });
     }
-  } catch { /* SW unavailable – silently skip */ }
+  } catch { /* SW unavailable - silently skip */ }
 }
 
 function schedulePushIfEnabled(app, newStatus) {
@@ -1463,7 +1463,7 @@ function checkStaleReminders() {
         localStorage.setItem(key, today);
         fireNotification(
           `⏰ Nachfassen: ${app.company}`,
-          `„${app.position}" — ${daysSt} Tage im Status ${app.status}`,
+          `„${app.position}" - ${daysSt} Tage im Status ${app.status}`,
           `stale-${app.id}`, app.id
         );
       }
@@ -1476,7 +1476,7 @@ function checkStaleReminders() {
         localStorage.setItem(fuKey, today);
         fireNotification(
           `📬 Nachfassen empfohlen: ${app.company}`,
-          `${app.position} — seit ${daysSt} Tagen keine Reaktion`,
+          `${app.position} - seit ${daysSt} Tagen keine Reaktion`,
           `followup-${app.id}`, app.id
         );
       }
@@ -1512,7 +1512,7 @@ async function checkManualReminders() {
       localStorage.setItem(fk, '1');
       const app = State.all.find(a => a.id === r.appId);
       if (!app) { await deleteReminder(r.appId); continue; }
-      fireNotification(`🔔 Erinnerung: ${app.company}`, r.note || `${app.position} — geplant für heute`, `reminder-${r.id}`, r.appId);
+      fireNotification(`🔔 Erinnerung: ${app.company}`, r.note || `${app.position} - geplant für heute`, `reminder-${r.id}`, r.appId);
     }
   } catch {}
   updateBadge();
@@ -1585,8 +1585,8 @@ function populateEventAppSelect() {
   const prev = sel.value;
   const opts = [...State.all]
     .sort((a, b) => a.company.localeCompare(b.company))
-    .map(a => `<option value="${a.id}">${escHtml(a.company)} – ${escHtml(a.position)}</option>`).join('');
-  sel.innerHTML = `<option value="">– keine Verknüpfung –</option>` + opts;
+    .map(a => `<option value="${a.id}">${escHtml(a.company)} - ${escHtml(a.position)}</option>`).join('');
+  sel.innerHTML = `<option value="">- keine Verknüpfung -</option>` + opts;
   if (State.all.some(a => a.id === prev)) sel.value = prev;
 }
 
@@ -1677,7 +1677,7 @@ function renderSettingsNotifications() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           Benachrichtigungen
         </div>
-        <div class="notif-master-sub">${!supported ? 'Nicht unterstützt' : denied ? 'Blockiert – in Systemeinstellungen freigeben' : granted ? (masterOn ? 'Aktiv' : 'Erlaubt, aber deaktiviert') : 'Erlaubnis noch nicht erteilt'}</div>
+        <div class="notif-master-sub">${!supported ? 'Nicht unterstützt' : denied ? 'Blockiert - in Systemeinstellungen freigeben' : granted ? (masterOn ? 'Aktiv' : 'Erlaubt, aber deaktiviert') : 'Erlaubnis noch nicht erteilt'}</div>
       </div>
       <input type="checkbox" class="toggle" ${masterOn ? 'checked' : ''} ${(!supported || denied) ? 'disabled' : ''} onchange="toggleMasterPush(this.checked)" />
     </label>
@@ -1900,7 +1900,7 @@ function moveStatus(idx, dir) {
 // ─── Google Drive Sync ────────────────────────────────────────────────────────
 // Client ID + API Key come from https://console.cloud.google.com/apis/credentials and
 // are entered by the user via the credentials modal (openGoogleDriveCredentialsModal()),
-// not hardcoded here — app.js ships static to every user, so a value baked in at build
+// not hardcoded here - app.js ships static to every user, so a value baked in at build
 // time would leak into the public source and only work for one Google Cloud project.
 const GD_LS_CLIENT_ID = 'jt-gd-client-id';
 const GD_LS_API_KEY   = 'jt-gd-api-key';
@@ -1993,7 +1993,7 @@ function _gdEnsureToken() {
             reject(new Error(resp.error === 'access_denied' ? 'CANCELLED' : resp.error));
           } else {
             _gdAccessToken = resp.access_token;
-            // Token expires – clear after expiry so next call re-authenticates
+            // Token expires - clear after expiry so next call re-authenticates
             setTimeout(() => { _gdAccessToken = null; }, (resp.expires_in - 30) * 1000);
             resolve();
           }
@@ -2052,7 +2052,7 @@ async function _gdRunSync() {
   const diffSec  = Math.abs(localTs - remoteTs) / 1000;
 
   if (diffSec < 5) {
-    // Effectively identical – just confirm
+    // Effectively identical - just confirm
     toast('Google Drive Backup ist aktuell ✓', 'success');
     _gdUpdateStatus('synced');
     return;
@@ -2221,7 +2221,7 @@ function clearGoogleDriveCredentials() {
   toast('Google Drive Zugangsdaten entfernt', 'info');
 }
 
-function syncToDropbox() { toast('Dropbox Sync – Coming Soon', 'info'); }
+function syncToDropbox() { toast('Dropbox Sync - Coming Soon', 'info'); }
 
 // ─── Share Target ─────────────────────────────────────────────────────────────
 function handleShareTarget() {
@@ -2445,7 +2445,7 @@ if ('serviceWorker' in navigator) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   // Snapshot BEFORE applyTheme()/applySkin()/applySalaryBlur() below write their own
-  // localStorage keys on every load — otherwise a brand-new visitor would already look
+  // localStorage keys on every load - otherwise a brand-new visitor would already look
   // like a "returning user" by the time maybeShowOnboarding() checks these further down.
   const _isReturningUser = !!(
     localStorage.getItem('jt-theme') || localStorage.getItem('jt-skin') ||
@@ -2469,7 +2469,7 @@ if ('serviceWorker' in navigator) {
     console.error('[idbReady]', err); // z.B. blockiert durch einen anderen offenen Tab mit alter DB-Version
   }
   await loadAll();
-  // Capture BEFORE maybeSeedDemoData() runs — it fills State.all with 4 demo entries
+  // Capture BEFORE maybeSeedDemoData() runs - it fills State.all with 4 demo entries
   // on a genuinely empty install, which would otherwise make that exact visitor look
   // like they already had data by the time the onboarding check below runs.
   const _hadDataBeforeSeed = State.all.length > 0;

@@ -13,7 +13,7 @@ function isDark() {
   return document.documentElement.getAttribute('data-theme') === 'dark';
 }
 // RGB-Tripel des aktiven Skins (z.B. "229,253,93") für Canvas-Farben (Chart.js
-// rendert auf <canvas>, das kaskadiert nicht über CSS — Custom Properties müssen
+// rendert auf <canvas>, das kaskadiert nicht über CSS - Custom Properties müssen
 // hier explizit ausgelesen werden, statt sie wie im DOM einfach zu vererben).
 function accentRgb() {
   return getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '99,102,241';
@@ -100,7 +100,7 @@ function renderDashboard() {
     { label:'Interviews',     value: interviews,
       sub: `${zusagen} Zusage${zusagen!==1?'n':''}`,
       icon:'users',       color:'#f59e0b', bg:'rgba(245,158,11,.1)' },
-    { label:'Ø Antwort',     value: avgResponse !== null ? avgResponse+'d' : '–',
+    { label:'Ø Antwort',     value: avgResponse !== null ? avgResponse+'d' : '-',
       sub:'bis 1. Statuswechsel',
       icon:'clock',       color:'#ec4899', bg:'rgba(236,72,153,.1)' },
   ].map(k => `
@@ -121,7 +121,7 @@ function renderDashboard() {
 
   document.getElementById('salary-grid').innerHTML = [
     { label:'Ø Gehalt',  value: fmtEuro(avgSalary) },
-    { label:'Min – Max', value: salaries.length ? `${fmtEuro(minSalary)} – ${fmtEuro(maxSalary)}` : '–' },
+    { label:'Min - Max', value: salaries.length ? `${fmtEuro(minSalary)} - ${fmtEuro(maxSalary)}` : '-' },
     { label:'Top Gehalt',value: fmtEuro(maxSalary) },
   ].map(s => `
     <div class="salary-card">
@@ -312,8 +312,8 @@ function tooltipStyle() {
 const MOBILE_SORT_OPTIONS = [
   { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
   { col:'applicationDate', dir:'asc',  label:'Älteste zuerst' },
-  { col:'company',         dir:'asc',  label:'Firma A–Z' },
-  { col:'company',         dir:'desc', label:'Firma Z–A' },
+  { col:'company',         dir:'asc',  label:'Firma A-Z' },
+  { col:'company',         dir:'desc', label:'Firma Z-A' },
   { col:'status',          dir:'asc',  label:'Status' },
   { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
   { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
@@ -445,7 +445,7 @@ function renderTable() {
           </button>
         </div>
       </td>
-      <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'–')}</td>
+      <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'-')}</td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
       <td class="hide-md td-mono jt-money" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
       <td onclick="event.stopPropagation()">
@@ -469,8 +469,8 @@ function getKanbanCols() {
 const KANBAN_SORT_OPTIONS = [
   { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
   { col:'applicationDate', dir:'asc',  label:'Älteste zuerst' },
-  { col:'company',         dir:'asc',  label:'Firma A–Z' },
-  { col:'company',         dir:'desc', label:'Firma Z–A' },
+  { col:'company',         dir:'asc',  label:'Firma A-Z' },
+  { col:'company',         dir:'desc', label:'Firma Z-A' },
   { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
   { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
 ];
@@ -668,7 +668,7 @@ function renderUpcomingEvents() {
       <div class="stc-dot ${cls}"></div>
       <div class="upcoming-body">
         <div class="upcoming-title">${escHtml(ev.title)}</div>
-        ${app ? `<div class="upcoming-sub">${escHtml(app.company)} – ${escHtml(app.position)}</div>` : ''}
+        ${app ? `<div class="upcoming-sub">${escHtml(app.company)} - ${escHtml(app.position)}</div>` : ''}
       </div>
       <div class="upcoming-date${isToday ? ' upcoming-date--today' : ''}">${dateLabel}${ev.time ? ` · ${escHtml(ev.time)}` : ''}</div>
     </div>`;

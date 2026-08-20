@@ -35,12 +35,12 @@
 
 /* ─── Theme Skins ──────────────────────────────────────────────────────────────
    A "skin" is the accent color family, independent of light/dark mode (that's
-   `data-theme`). Every skin only has to define these tokens — --accent-rgb feeds
+   `data-theme`). Every skin only has to define these tokens - --accent-rgb feeds
    every rgba()-based glow/shadow below via rgb(var(--accent-rgb) / <alpha>), so
    adding a new skin never requires touching those rules. --accent-text is a
    separately-tuned shade for when the accent is used as *text* on a light
    background, since a bright/light accent (e.g. lime) can look great as a fill
-   but be nearly unreadable as foreground text — plain --accent covers fills,
+   but be nearly unreadable as foreground text - plain --accent covers fills,
    borders and dark-mode text where that's not a problem. */
 :root, [data-skin="neon"] {
   --accent-rgb:   229,253,93;
@@ -69,7 +69,7 @@
 [data-theme="dark"] { --shadow-glow: 0 0 0 3px rgb(var(--accent-rgb) / .35); }
 
 /* "Original" restores the app's pre-Neon light palette exactly (incl. the
-   light sidebar) — the structural bg/border/text + dark-sidebar changes below
+   light sidebar) - the structural bg/border/text + dark-sidebar changes below
    were designed for "Neon" only and must not bleed into "Original". */
 [data-theme="light"][data-skin="original"] {
   --bg-base:       #f4f4f8;
@@ -150,9 +150,9 @@
 }
 
 /* Sidebar stays a permanently dark rail even in the light theme (matches the
-   reference dashboards — dark nav column, light content). Re-declaring the same
+   reference dashboards - dark nav column, light content). Re-declaring the same
    token names scoped to #sidebar means every existing var(--text-primary) etc.
-   rule inside it just picks up these values instead — no selector duplication. */
+   rule inside it just picks up these values instead - no selector duplication. */
 [data-theme="light"] #sidebar {
   --bg-nav:        #151514;
   --bg-elevated:   #1f1f1d;
@@ -254,7 +254,7 @@ body::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)'/%3E%3C/svg%3E");
   background-size: 200px 200px;
   background-repeat: repeat;
-  will-change: transform; /* own compositing layer – no repaints */
+  will-change: transform; /* own compositing layer - no repaints */
 }
 [data-theme="dark"] body::after { opacity: 0.055; }
 
@@ -264,7 +264,7 @@ body::after {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-full); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-/* Firefox doesn't support ::-webkit-scrollbar — without this it falls back to a
+/* Firefox doesn't support ::-webkit-scrollbar - without this it falls back to a
    bulky native scrollbar (most noticeable on the horizontally-scrolling Kanban board). */
 html { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
@@ -848,7 +848,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .kanban-column { flex: 1 0 220px; min-width: 220px; }
 
 /* Mobile (= Bottom-Nav-Breakpoint): zurück zu einem Raster statt Seitwärts-Scrollen
-   — bei 4 Kategorien ergibt das ein griffiges 2×2-Raster, was sich in der Praxis
+   - bei 4 Kategorien ergibt das ein griffiges 2×2-Raster, was sich in der Praxis
    deutlich besser bedienen lässt als schmale, seitlich wegscrollende Spalten.
    Bei mehr Kategorien wächst das Raster einfach um weitere Zeilen. */
 @media (max-width: 768px) {
@@ -1571,7 +1571,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   THEME CONSISTENCY — ensure every element reads from CSS vars correctly
+   THEME CONSISTENCY - ensure every element reads from CSS vars correctly
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* Form inputs always use token backgrounds */
@@ -2071,7 +2071,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   KANBAN CARD — footer, indicators, status button
+   KANBAN CARD - footer, indicators, status button
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .kanban-card-footer {
@@ -2134,7 +2134,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DETAIL MODAL — contact section, status button wrapper
+   DETAIL MODAL - contact section, status button wrapper
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .detail-contact-grid {
@@ -2159,7 +2159,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   FORM — section divider label
+   FORM - section divider label
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .form-section-label {
@@ -2176,7 +2176,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE SCROLL — iOS top area fix (elements behind notch/status bar)
+   MOBILE SCROLL - iOS top area fix (elements behind notch/status bar)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Ensure page content never hides under status bar on iOS */
@@ -2367,7 +2367,7 @@ body { -webkit-overflow-scrolling: auto; }
 #f-history-note-group.hidden { display: none; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   KANBAN CARD — new compact layout (matching screenshot)
+   KANBAN CARD - new compact layout (matching screenshot)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Replace old card styles */
@@ -2487,7 +2487,7 @@ body { -webkit-overflow-scrolling: auto; }
   font-weight: 600;
 }
 
-/* Note pill — shows the most recent history note inline */
+/* Note pill - shows the most recent history note inline */
 .kc-note-pill {
   font-size: 0.72rem;
   color: var(--text-secondary);
@@ -2539,7 +2539,7 @@ body { -webkit-overflow-scrolling: auto; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   TABLE — inline status dropdown button
+   TABLE - inline status dropdown button
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .status-pill {
