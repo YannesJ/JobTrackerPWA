@@ -1027,10 +1027,14 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .modal-header h2 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
 /* Detail-Modal-Header: bricht die Aktions-Icons auf eine eigene Zeile um, statt
    den Firmennamen-Block auf schmalen Screens zusammenzuquetschen. */
-.detail-header { flex-wrap: wrap; row-gap: 0.5rem; }
+.detail-header { flex-wrap: wrap; row-gap: 0.5rem; position: relative; padding-right: 3rem; }
 .detail-header-info { flex: 1 1 200px; min-width: 0; }
 .detail-header-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; margin-left: 8px; }
+/* X bleibt fest oben rechts, unabhängig davon ob die übrigen Action-Icons umbrechen. */
+.detail-close-btn { position: absolute; top: 0.75rem; right: 1rem; }
 @media (max-width: 480px) {
+  .detail-header { padding-right: 2.5rem; }
+  .detail-close-btn { top: 0.5rem; right: 0.5rem; }
   .detail-header-actions { flex: 1 1 100%; justify-content: flex-end; margin-left: 0; }
 }
 .modal-body {
@@ -2506,14 +2510,15 @@ body { -webkit-overflow-scrolling: auto; }
   .view-label-desktop { display: none; }
 }
 
-/* ── Status popover: ensure it always renders above card content ─────────── */
+/* ── Status popover: ensure it always renders above card content and above
+   an open modal (detail-modal's backdrop sits at z-index 9000) ───────────── */
 [data-status-anchor] { position: relative; display: inline-flex; }
 .status-popover {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
   left: auto;
-  z-index: 500;
+  z-index: 9500;
   min-width: 130px;
 }
 

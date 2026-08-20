@@ -783,14 +783,13 @@
     <div class="modal-header detail-header">
       <div class="detail-header-info">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-          <span id="d-status-badge" class="badge badge-dyn s-0">Offen</span>
-          <span id="d-priority-stars"></span>
           <div style="position:relative;display:inline-flex;" data-status-anchor>
-            <button id="d-status-btn" class="btn btn-ghost btn-xs" style="gap:4px;font-size:.7rem;padding:.2rem .55rem" title="Status ändern">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-              Status
+            <button id="d-status-btn" class="status-pill" title="Status ändern">
+              <span id="d-status-badge" class="badge badge-dyn s-0" style="pointer-events:none">Offen</span>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:.6"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
           </div>
+          <span id="d-priority-stars"></span>
           <div id="d-reminder" class="reminder-alert hidden" style="margin-bottom:0;padding:3px 8px;font-size:0.7rem">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             &gt;14 Tage keine Änderung
@@ -821,10 +820,10 @@
         <button id="d-delete-btn" class="btn btn-icon" style="color:var(--text-muted)" title="Löschen" aria-label="Löschen">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
         </button>
-        <button class="btn btn-icon" onclick="closeDetail()" title="Schließen" aria-label="Schließen">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
       </div>
+      <button class="btn btn-icon detail-close-btn" onclick="closeDetail()" title="Schließen" aria-label="Schließen">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
     <div class="modal-body">
       <div class="detail-section" style="position:relative">
@@ -848,7 +847,7 @@
         </div>
       </div>
       <div id="d-links" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem"></div>
-      <a id="d-followup" href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:0.82rem;font-weight:600;color:var(--accent);text-decoration:none;margin-bottom:1rem">
+      <a id="d-followup" href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:0.82rem;font-weight:600;color:var(--accent-text);text-decoration:none;margin-bottom:1rem">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         Nachfassen per E-Mail
       </a>

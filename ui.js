@@ -334,7 +334,40 @@ function toggleMobileSortMenu(e) {
       ${o.label}
     </div>`;
   }).join('');
-  btn.parentElement.appendChild(popover);
+
+  // Fixed & an <body> gehängt statt in btn.parentElement (wie beim Spalten-Popover):
+  // ohne einen position:relative-Vorfahren landete das absolut positionierte Popover
+  // irgendwo am Dokumentanfang statt unter dem Button - dadurch praktisch unklickbar.
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const rect    = btn.getBoundingClientRect();
+  const popRect = popover.getBoundingClientRect();
+  const margin  = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.right - popRect.width, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.right      = 'auto';
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
 }
 
 function setMobileSort(col, dir) {
