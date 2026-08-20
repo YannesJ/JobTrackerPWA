@@ -1,0 +1,8 @@
+{
+  "name": "jobtracker",
+  "private": true,
+  "description": "Serverlose PWA für die Bewerbungsverwaltung",
+  "scripts": {
+    "test": "node tests/run.js"
+  }
+}
