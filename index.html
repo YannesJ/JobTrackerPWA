@@ -290,57 +290,65 @@
       <div class="page-header">
         <div class="page-header-left">
           <h1>Info</h1>
-          <p class="page-header-subtitle">Was JobTracker macht und wie deine Daten behandelt werden</p>
+          <p class="page-header-subtitle">Kurz erklärt</p>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Über JobTracker</div>
         <div class="card card-sm">
           <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
-            JobTracker hilft dir, den Überblick über deine Bewerbungen zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Alles läuft direkt im Browser als installierbare PWA, ganz ohne eigenen Server oder Account.
+            JobTracker hilft dir, deine Bewerbungen im Blick zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Ganz ohne Account, ganz ohne Anmeldung.
           </p>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Datenspeicherung &amp; Datenschutz</div>
+        <div class="settings-section-title">Warum sehe ich meine Bewerbungen nicht auf allen Geräten?</div>
         <div class="card card-sm">
           <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
-            Bewerbungen, Erinnerungen und Termine werden ausschließlich lokal in deinem Browser gespeichert (IndexedDB) – nichts wird automatisch irgendwohin übertragen.
+            Deine Bewerbungen werden nur auf diesem einen Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto dahinter – niemand außer dir kann diese Daten sehen, und es wird auch nichts automatisch irgendwohin hochgeladen.
           </p>
           <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
-            Unter <strong>Einstellungen → Dauerhafter Speicher</strong> verhinderst du, dass der Browser diese Daten bei Speicherplatzmangel automatisch löscht.
+            Der Nachteil dabei: Handy und Laptop führen dadurch zwei getrennte Listen. Was du am Handy einträgst, taucht nicht von selbst auf dem Laptop auf.
           </p>
+          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
+            So gleichst du zwei Geräte ab:
+          </p>
+          <ol style="font-size:.85rem;line-height:1.7;color:var(--text-secondary);margin:0 0 .625rem 1.2rem;padding:0">
+            <li>Auf dem einen Gerät: <strong>Einstellungen → Offline-Backup → JSON</strong> exportieren.</li>
+            <li>Die Datei aufs andere Gerät bringen (z.B. per Mail oder Cloud-Ordner) und dort über <strong>Einstellungen → Offline-Backup → Import JSON</strong> wieder einlesen.</li>
+          </ol>
           <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
-            Über <strong>Einstellungen → Offline-Backup</strong> exportierst und importierst du alle Daten als JSON oder CSV/Excel. Die optionale Google-Drive-Synchronisation legt ein Backup ausschließlich im privaten <code style="font-size:.78rem;background:var(--bg-subtle);padding:1px 5px;border-radius:4px">appDataFolder</code> deines eigenen Google-Kontos ab – dafür trägst du unter <strong>Einstellungen → Cloud-Synchronisation</strong> deine eigenen Zugangsdaten ein.
+            Wer das nicht von Hand machen möchte: Unter <strong>Einstellungen → Cloud-Synchronisation</strong> lässt sich optional mit einem eigenen Google-Drive-Konto abgleichen – dafür trägst du dort einmalig eigene Zugangsdaten ein.
           </p>
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Funktionen im Überblick</div>
+        <div class="settings-section-title">Funktionen kurz erklärt</div>
         <div class="card card-sm">
-          <div style="margin-bottom:.875rem">
+          <div style="margin-bottom:.75rem">
             <h3 style="font-size:.85rem;margin-bottom:2px">Tabelle &amp; Kanban</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Bewerbungen als sortierbare Tabelle oder als Kanban-Board nach Status – umschaltbar über die Ansicht-Buttons auf der Seite „Bewerbungen".</p>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Bewerbungen als Liste oder als Karten-Board nach Status – umschaltbar auf der Seite „Bewerbungen".</p>
           </div>
-          <div style="margin-bottom:.875rem">
-            <h3 style="font-size:.85rem;margin-bottom:2px">Eigene Status-Kategorien</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Status mit eigener Farbe anlegen, umbenennen und sortieren – unter Einstellungen → Status-Kategorien.</p>
+          <div style="margin-bottom:.75rem">
+            <h3 style="font-size:.85rem;margin-bottom:2px">Eigene Status</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Eigene Status mit Farbe anlegen, umbenennen und sortieren, unter Einstellungen.</p>
           </div>
-          <div style="margin-bottom:.875rem">
+          <div style="margin-bottom:.75rem">
             <h3 style="font-size:.85rem;margin-bottom:2px">Kalender &amp; Erinnerungen</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Termine zu Bewerbungen anlegen und dich per Push-Benachrichtigung erinnern lassen (Benachrichtigungen bleiben standardmäßig aus).</p>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Termine anlegen und dich rechtzeitig daran erinnern lassen.</p>
           </div>
-          <div>
-            <h3 style="font-size:.85rem;margin-bottom:2px">Gehalts-Sichtschutz</h3>
+          <div style="margin-bottom:.75rem">
+            <h3 style="font-size:.85rem;margin-bottom:2px">Gehalt verbergen</h3>
             <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Blendet alle Gehaltsangaben per Klick aus – praktisch, wenn du die Liste mal jemandem zeigen möchtest. Auge-Icon in der Sidebar (Desktop) bzw. unten rechts (Mobile).</p>
           </div>
+          <div>
+            <h3 style="font-size:.85rem;margin-bottom:2px">Dauerhafter Speicher</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Damit der Browser deine Daten nicht irgendwann von selbst aufräumt, kannst du das unter Einstellungen fest einschalten.</p>
+          </div>
         </div>
       </div>
-
-      <p style="font-size:0.72rem;text-align:center;color:var(--text-muted);margin-top:1.5rem">JobTracker · Apache 2.0 · Alle Daten lokal auf deinem Gerät</p>
     </div>
 
     <!-- SETTINGS -->
