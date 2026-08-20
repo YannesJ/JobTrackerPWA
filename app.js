@@ -81,12 +81,13 @@ const TABLE_COLUMNS = [
   { key: 'source',          label: 'Quelle' },
   { key: 'applicationDate', label: 'Datum' },
   { key: 'expectedSalary',  label: 'Gehalt' },
+  { key: 'priority',        label: 'Priorität' },
   { key: 'notes',           label: 'Notizen' },
   { key: 'nextEvent',       label: 'Nächster Termin' },
 ];
 const DEFAULT_TABLE_COLUMNS = {
   position: true, status: true, source: true, applicationDate: true,
-  expectedSalary: true, notes: false, nextEvent: false,
+  expectedSalary: true, priority: false, notes: false, nextEvent: false,
 };
 function loadTableColumns() {
   try {
@@ -289,6 +290,19 @@ function fmtEuroShort(n) {
   if (n >= 1000) return (n/1000).toFixed(0) + 'k €';
   return n + ' €';
 }
+const STAR_ICON_PATH = 'M12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
+/** 1-3 Sterne als Markup, gefüllt bis n. Leer/0/null -> ''. */
+function starsHTML(n, size = 12) {
+  n = Number(n) || 0;
+  if (!n) return '';
+  let out = '';
+  for (let i = 1; i <= 3; i++) {
+    const on = i <= n;
+    out += `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${on ? '#f59e0b' : 'none'}" stroke="${on ? '#f59e0b' : 'var(--text-muted)'}" stroke-width="2"><polygon points="${STAR_ICON_PATH}"/></svg>`;
+  }
+  return `<span class="priority-stars" title="Priorität: ${n}/3">${out}</span>`;
+}
+
 function daysSince(iso) {
   if (!iso) return Infinity;
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -590,7 +604,7 @@ function sortApps() {
   State.filtered.sort((a, b) => {
     let va = a[col] ?? '', vb = b[col] ?? '';
     if (col === 'applicationDate') { va = new Date(va); vb = new Date(vb); }
-    if (col === 'expectedSalary')  { va = Number(va);   vb = Number(vb); }
+    if (col === 'expectedSalary' || col === 'priority') { va = Number(va) || 0; vb = Number(vb) || 0; }
     if (va < vb) return dir === 'asc' ? -1 : 1;
     if (va > vb) return dir === 'asc' ?  1 : -1;
     return 0;
@@ -609,7 +623,7 @@ function sortAppsForKanban(apps, status) {
   return [...apps].sort((a, b) => {
     let va = a[col] ?? '', vb = b[col] ?? '';
     if (col === 'applicationDate') { va = new Date(va); vb = new Date(vb); }
-    if (col === 'expectedSalary')  { va = Number(va);   vb = Number(vb); }
+    if (col === 'expectedSalary' || col === 'priority') { va = Number(va) || 0; vb = Number(vb) || 0; }
     if (va < vb) return dir === 'asc' ? -1 : 1;
     if (va > vb) return dir === 'asc' ?  1 : -1;
     return 0;
@@ -787,6 +801,8 @@ function openForm(id) {
   document.getElementById('f-contact-phone').value = app?.contactPhone || '';
   document.getElementById('f-contact-email').value = app?.contactEmail || '';
   document.getElementById('f-notes').value     = app?.notes || '';
+  document.getElementById('f-priority').value  = app?.priority || 0;
+  renderFormPriorityStars(app?.priority || 0);
   const noteField = document.getElementById('f-history-note');
   if (noteField) noteField.value = '';
   // Show history note field only when editing (existing entry)
@@ -797,6 +813,21 @@ function openForm(id) {
 }
 
 function closeForm() { hideModal('form-modal'); }
+
+/** Sterne-Auswahl im Formular: nochmal auf denselben Stern klicken setzt auf 0 zurück. */
+function setFormPriority(n) {
+  const input = document.getElementById('f-priority');
+  const current = Number(input.value) || 0;
+  const next = current === n ? 0 : n;
+  input.value = next;
+  renderFormPriorityStars(next);
+}
+function renderFormPriorityStars(n) {
+  n = Number(n) || 0;
+  document.querySelectorAll('#f-priority-picker .star-btn').forEach(btn => {
+    btn.classList.toggle('filled', Number(btn.dataset.star) <= n);
+  });
+}
 
 /** Öffnet das leere Formular vorausgefüllt als Kopie einer bestehenden Bewerbung -
  *  praktisch für Serienbewerbungen bei ähnlichen Rollen/Portalen. Speichert als neuer
@@ -815,6 +846,8 @@ function duplicateApp(id) {
   document.getElementById('f-contact-name').value  = app.contactName || '';
   document.getElementById('f-contact-phone').value = app.contactPhone || '';
   document.getElementById('f-contact-email').value = app.contactEmail || '';
+  document.getElementById('f-priority').value = app.priority || 0;
+  renderFormPriorityStars(app.priority || 0);
   document.getElementById('app-form').dataset.skipDupeWarning = '1';
   toast('Als Vorlage übernommen - Datum und Status bitte prüfen', 'info');
 }
@@ -881,6 +914,7 @@ async function submitForm(e) {
     contactPhone:    document.getElementById('f-contact-phone').value.trim(),
     contactEmail:    document.getElementById('f-contact-email').value.trim(),
     notes:           document.getElementById('f-notes').value.trim(),
+    priority:        Number(document.getElementById('f-priority').value) || null,
     history,
     createdAt:  existing?.createdAt || nowISO(),
     updatedAt:  nowISO(),
@@ -924,6 +958,8 @@ function openDetail(id) {
   const badge = document.getElementById('d-status-badge');
   badge.textContent = a.status;
   badge.className   = `badge ${statusClass(a.status)}`;
+  const starsEl = document.getElementById('d-priority-stars');
+  if (starsEl) starsEl.innerHTML = starsHTML(a.priority, 13);
 
   // Reminder - settings-based threshold per status
   const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;

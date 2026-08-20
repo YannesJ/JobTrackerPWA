@@ -804,6 +804,7 @@ html.blur-salary .jt-money {
 .table-wrap[data-hide-cols~="source"]          [data-col="source"],
 .table-wrap[data-hide-cols~="applicationDate"] [data-col="applicationDate"],
 .table-wrap[data-hide-cols~="expectedSalary"]  [data-col="expectedSalary"],
+.table-wrap[data-hide-cols~="priority"]        [data-col="priority"],
 .table-wrap[data-hide-cols~="notes"]           [data-col="notes"],
 .table-wrap[data-hide-cols~="nextEvent"]       [data-col="nextEvent"] {
   display: none;
@@ -1209,6 +1210,23 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   flex-shrink: 0;
   cursor: pointer;
 }
+
+/* ─── Priorität (1-3 Sterne) ───────────────────────────────────────────────── */
+.star-picker { display: flex; gap: 2px; }
+.star-btn {
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 0;
+  transition: color var(--t-fast), transform var(--t-fast);
+}
+.star-btn svg { fill: none; stroke: currentColor; }
+.star-btn:hover { color: #f59e0b; transform: scale(1.1); }
+.star-btn.filled { color: #f59e0b; }
+.star-btn.filled svg { fill: currentColor; }
+.priority-stars { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; }
 
 /* ─── Info-Seite: eine durchgehende Liste mit Trennlinien statt Einzelkästen ── */
 .info-block {

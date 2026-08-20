@@ -317,6 +317,7 @@ const MOBILE_SORT_OPTIONS = [
   { col:'status',          dir:'asc',  label:'Status' },
   { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
   { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
+  { col:'priority',        dir:'desc', label:'Priorität ↓' },
 ];
 
 function toggleMobileSortMenu(e) {
@@ -403,6 +404,7 @@ function renderTable() {
                 ${a.source ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
                 <span class="app-card-chip app-card-chip--mono">${dateStr}</span>
                 ${a.expectedSalary ? `<span class="app-card-chip app-card-chip--accent jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+                ${starsHTML(a.priority, 11)}
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
@@ -453,6 +455,7 @@ function renderTable() {
       <td class="hide-md td-mono" data-col="source" style="font-size:0.78rem">${escHtml(a.source||'-')}</td>
       <td class="hide-md td-mono" data-col="applicationDate" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
       <td class="hide-md td-mono jt-money" data-col="expectedSalary" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
+      <td class="hide-md" data-col="priority">${starsHTML(a.priority) || '-'}</td>
       <td class="hide-md" data-col="notes" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.78rem;color:var(--text-muted)" title="${escAttr(a.notes||'')}">${escHtml(a.notes||'-')}</td>
       <td class="hide-md td-mono" data-col="nextEvent" style="font-size:0.78rem" title="${escAttr(nextEv?.title||'')}">${nextEvLabel}</td>
       <td onclick="event.stopPropagation()">
@@ -482,6 +485,7 @@ const KANBAN_SORT_OPTIONS = [
   { col:'company',         dir:'desc', label:'Firma Z-A' },
   { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
   { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
+  { col:'priority',        dir:'desc', label:'Priorität ↓' },
 ];
 
 function renderKanban() {
@@ -531,6 +535,7 @@ function renderKanban() {
             <div class="kc-meta">
               <span class="kc-date">${fmtDateShort(a.applicationDate)}</span>
               ${a.expectedSalary ? `<span class="kc-salary jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+              ${starsHTML(a.priority, 11)}
             </div>
             ${lastNote ? `<div class="kc-note-pill">${escHtml(lastNote)}</div>` : ''}
             <div class="kc-bottom">

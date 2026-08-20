@@ -216,6 +216,7 @@
                   <th class="hide-md" data-col="source">Quelle</th>
                   <th class="sortable hide-md" data-col="applicationDate" onclick="toggleSort('applicationDate')">Datum<span class="sort-arrow"></span></th>
                   <th class="sortable hide-md" data-col="expectedSalary" onclick="toggleSort('expectedSalary')">Gehalt<span class="sort-arrow"></span></th>
+                  <th class="sortable hide-md" data-col="priority" onclick="toggleSort('priority')">Priorität<span class="sort-arrow"></span></th>
                   <th class="hide-md" data-col="notes">Notizen</th>
                   <th class="hide-md" data-col="nextEvent">Nächster Termin</th>
                   <th></th>
@@ -681,6 +682,21 @@
             </select>
           </div>
           <div class="form-group">
+            <label class="form-label">Priorität <span style="font-weight:400;color:var(--text-muted)">(wie sehr willst du den Job?)</span></label>
+            <div class="star-picker" id="f-priority-picker">
+              <button type="button" class="star-btn" data-star="1" onclick="setFormPriority(1)" title="Gering" aria-label="Priorität gering">
+                <svg width="20" height="20" viewBox="0 0 24 24" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+              <button type="button" class="star-btn" data-star="2" onclick="setFormPriority(2)" title="Mittel" aria-label="Priorität mittel">
+                <svg width="20" height="20" viewBox="0 0 24 24" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+              <button type="button" class="star-btn" data-star="3" onclick="setFormPriority(3)" title="Hoch" aria-label="Priorität hoch">
+                <svg width="20" height="20" viewBox="0 0 24 24" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+            </div>
+            <input type="hidden" id="f-priority" value="0" />
+          </div>
+          <div class="form-group">
             <label class="form-label" for="f-source">Quelle</label>
             <input id="f-source" type="text" class="form-input" placeholder="z.B. LinkedIn"
               inputmode="text" autocomplete="off" enterkeyhint="next" />
@@ -762,6 +778,7 @@
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
           <span id="d-status-badge" class="badge badge-dyn s-0">Offen</span>
+          <span id="d-priority-stars"></span>
           <div style="position:relative;display:inline-flex;" data-status-anchor>
             <button id="d-status-btn" class="btn btn-ghost btn-xs" style="gap:4px;font-size:.7rem;padding:.2rem .55rem" title="Status ändern">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
