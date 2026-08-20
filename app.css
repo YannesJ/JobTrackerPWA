@@ -4,8 +4,17 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-/* ─── Google Fonts ─────────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* ─── Fonts (Outfit + JetBrains Mono, self-hosted under vendor/fonts/) ────────
+   Vendored instead of loaded from fonts.googleapis.com - no third-party request
+   on every visit, and it can't ever go down independently of this site. */
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 300; src: url('vendor/fonts/outfit-latin-300-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 400; src: url('vendor/fonts/outfit-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 500; src: url('vendor/fonts/outfit-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 600; src: url('vendor/fonts/outfit-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 700; src: url('vendor/fonts/outfit-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 800; src: url('vendor/fonts/outfit-latin-800-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-display: swap; font-weight: 400; src: url('vendor/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-display: swap; font-weight: 500; src: url('vendor/fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
 
 /* ─── Design Tokens ────────────────────────────────────────────────────────── */
 :root {

@@ -1085,16 +1085,14 @@
      https://accounts.google.com/gsi/client
      https://apis.google.com/js/api.js
 -->
-<link rel="preconnect" href="https://unpkg.com" />
-<link rel="preconnect" href="https://cdn.jsdelivr.net" />
-
-<!-- defer: lets the browser paint the static shell immediately instead of blocking on
-     these CDN fetches (DNS + TLS handshake) before any HTML below <head> can render.
-     xlsx.full.min.js (~900KB) is NOT loaded here at all - it's only needed for
+<!-- idb-keyval, lucide, chart.js and xlsx are vendored under vendor/ instead of loaded
+     from a CDN - no third-party requests, nothing breaks if unpkg/jsdelivr are ever
+     down, and the app's own "everything stays local" pitch actually holds end to end.
+     xlsx.full.min.js (~880KB) is NOT loaded here at all - it's only needed for
      CSV/Excel import and is fetched on demand, see _ensureXLSX() in app.js. -->
-<script src="https://unpkg.com/idb-keyval@6/dist/umd.js" defer></script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
+<script src="vendor/idb-keyval/idb-keyval.js" defer></script>
+<script src="vendor/lucide/lucide.min.js" defer></script>
+<script src="vendor/chart.js/chart.umd.min.js" defer></script>
 <script src="app.js" defer></script>
 <script src="ui.js" defer></script>
 <script>

@@ -4,11 +4,27 @@
  */
 'use strict';
 
-const CACHE_APP_SHELL = 'jobtracker-app-shell-v4';
-const CACHE_CDN       = 'jobtracker-cdn-v3';
+const CACHE_APP_SHELL = 'jobtracker-app-shell-v5';
 
-const APP_SHELL_URLS = ['/', '/index.html', '/app.css', '/app.js', '/ui.js', '/manifest.json'];
-const CDN_ORIGINS    = ['https://unpkg.com','https://cdn.jsdelivr.net','https://fonts.googleapis.com','https://fonts.gstatic.com'];
+// Every asset the app needs is now same-origin (idb-keyval/lucide/chart.js/fonts are
+// vendored under vendor/, see index.html and app.css) - no CDN cache/origin list needed
+// anymore. xlsx.full.min.js is deliberately NOT precached here: it's lazy-loaded only
+// when CSV/Excel import is actually used (see _ensureXLSX() in app.js), and picks up a
+// cache entry the same way as any other same-origin request the first time that happens.
+const APP_SHELL_URLS = [
+  '/', '/index.html', '/app.css', '/app.js', '/ui.js', '/manifest.json',
+  '/vendor/idb-keyval/idb-keyval.js',
+  '/vendor/lucide/lucide.min.js',
+  '/vendor/chart.js/chart.umd.min.js',
+  '/vendor/fonts/outfit-latin-300-normal.woff2',
+  '/vendor/fonts/outfit-latin-400-normal.woff2',
+  '/vendor/fonts/outfit-latin-500-normal.woff2',
+  '/vendor/fonts/outfit-latin-600-normal.woff2',
+  '/vendor/fonts/outfit-latin-700-normal.woff2',
+  '/vendor/fonts/outfit-latin-800-normal.woff2',
+  '/vendor/fonts/jetbrains-mono-latin-400-normal.woff2',
+  '/vendor/fonts/jetbrains-mono-latin-500-normal.woff2',
+];
 
 // ── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -21,7 +37,7 @@ self.addEventListener('install', event => {
 
 // ── Activate ─────────────────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
-  const current = [CACHE_APP_SHELL, CACHE_CDN];
+  const current = [CACHE_APP_SHELL];
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => !current.includes(k)).map(k => caches.delete(k))))
@@ -34,8 +50,7 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== 'GET') return;
-  if (CDN_ORIGINS.some(o => request.url.startsWith(o))) { event.respondWith(networkFirstCDN(request)); return; }
-  if (url.origin === self.location.origin)               { event.respondWith(cacheFirstAppShell(request)); return; }
+  if (url.origin === self.location.origin) { event.respondWith(cacheFirstAppShell(request)); return; }
 });
 
 async function cacheFirstAppShell(request) {
@@ -52,25 +67,6 @@ async function cacheFirstAppShell(request) {
     }
     return new Response('Offline', { status: 503 });
   }
-}
-
-async function networkFirstCDN(request) {
-  const cache = await caches.open(CACHE_CDN);
-  try {
-    const response = await fetchWithTimeout(request, 5000);
-    if (response.ok) cache.put(request, response.clone());
-    return response;
-  } catch {
-    const cached = await cache.match(request);
-    return cached || new Response('CDN offline', { status: 503 });
-  }
-}
-
-function fetchWithTimeout(request, ms) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('timeout')), ms);
-    fetch(request).then(r => { clearTimeout(t); resolve(r); }).catch(e => { clearTimeout(t); reject(e); });
-  });
 }
 
 // ── Message Handler ───────────────────────────────────────────────────────────

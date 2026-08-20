@@ -1313,15 +1313,15 @@ function parseDelimitedLine(line, delim) {
   return result;
 }
 
-// xlsx.full.min.js (~900KB) is only needed for .xlsx/.xls import, so it isn't part of the
-// initial page load \u2014 it's fetched on demand here, the same lazy-load pattern _gdEnsureLibs()
-// uses for the Google Drive libraries.
+// xlsx.full.min.js (~880KB, vendored under vendor/xlsx/) is only needed for .xlsx/.xls
+// import, so it isn't part of the initial page load - it's fetched on demand here, the
+// same lazy-load pattern _gdEnsureLibs() uses for the Google Drive libraries.
 let _xlsxReady = null;
 function _ensureXLSX() {
   if (typeof XLSX !== 'undefined') return Promise.resolve();
   if (_xlsxReady) return _xlsxReady;
   _xlsxReady = new Promise((resolve, reject) => {
-    const src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    const src = 'vendor/xlsx/xlsx.full.min.js';
     const s = document.createElement('script');
     s.src = src; s.async = true;
     s.onload  = resolve;
