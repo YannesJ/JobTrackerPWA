@@ -172,7 +172,7 @@ const State = {
     Absage:    { col: 'applicationDate', dir: 'desc' },
     Zusage:    { col: 'applicationDate', dir: 'desc' },
   },
-  theme:  localStorage.getItem('jt-theme') || 'dark',
+  theme:  localStorage.getItem('jt-theme') || 'light',
   skin:   localStorage.getItem('jt-skin') || 'neon',
   salaryBlur: localStorage.getItem('jt-salary-blur') === '1',
   // Persisted settings
@@ -410,6 +410,71 @@ async function deleteApp(id) {
   await deleteReminder(id); // remove any associated reminder
   await loadAll();
   toast('Bewerbung gelöscht', 'info');
+}
+
+// ─── Demo-Daten für neue, leere Installationen ─────────────────────────────────
+// Läuft nur EIN einziges Mal überhaupt, gesteuert über das jt-demo-seeded-Flag,
+// und schreibt nur, wenn zu diesem Zeitpunkt noch gar keine Bewerbung existiert.
+// Bestehende Nutzer mit eigenen Daten sind dadurch sicher, und zwar dauerhaft:
+// Das Flag wird gesetzt, BEVOR geprüft wird ob leer geschrieben werden darf – ein
+// späteres Leeren der Liste (z.B. "Alle Daten löschen") lässt die Demo-Daten also
+// nicht wieder auftauchen, weil dieser Check dann schon "erledigt" ist.
+async function maybeSeedDemoData() {
+  if (localStorage.getItem('jt-demo-seeded')) return;
+  localStorage.setItem('jt-demo-seeded', '1');
+  if (State.all.length > 0) return;
+
+  const daysAgo    = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); };
+  const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); };
+  const demoNote   = 'Demo-Eintrag – kann jederzeit gelöscht werden.';
+
+  const demoApps = [
+    {
+      id: uuid(), company: 'Blaupause Software GmbH', position: 'Frontend Developer (React)',
+      status: 'Interview', source: 'LinkedIn', expectedSalary: 62000,
+      applicationDate: daysAgo(21), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(21) },
+        { status: 'Interview', timestamp: isoDaysAgo(9), note: 'Erstes Gespräch mit dem Tech-Lead, sehr angenehm.' },
+      ],
+      createdAt: isoDaysAgo(21), updatedAt: isoDaysAgo(9),
+    },
+    {
+      id: uuid(), company: 'Nordwind Logistik AG', position: 'Werkstudent Logistik & Disposition',
+      status: 'Offen', source: 'Indeed', expectedSalary: null,
+      applicationDate: daysAgo(6), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [{ status: 'Offen', timestamp: isoDaysAgo(6) }],
+      createdAt: isoDaysAgo(6), updatedAt: isoDaysAgo(6),
+    },
+    {
+      id: uuid(), company: 'Havelperle Consulting', position: 'Junior Consultant',
+      status: 'Absage', source: 'StepStone', expectedSalary: 48000,
+      applicationDate: daysAgo(48), platformLink: '', documentLink: '', rejectionReason: 'Stelle wurde intern besetzt',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(48) },
+        { status: 'Interview', timestamp: isoDaysAgo(35) },
+        { status: 'Absage',    timestamp: isoDaysAgo(24), note: 'Absage per E-Mail erhalten.' },
+      ],
+      createdAt: isoDaysAgo(48), updatedAt: isoDaysAgo(24),
+    },
+    {
+      id: uuid(), company: 'Rheinbogen Technik GmbH', position: 'Ausbildung Fachinformatiker Anwendungsentwicklung',
+      status: 'Zusage', source: 'Empfehlung', expectedSalary: null,
+      applicationDate: daysAgo(70), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: 'Frau Keller (Personalabteilung)', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(70) },
+        { status: 'Interview', timestamp: isoDaysAgo(55) },
+        { status: 'Zusage',    timestamp: isoDaysAgo(40), note: 'Vertrag unterschrieben, Start im September.' },
+      ],
+      createdAt: isoDaysAgo(70), updatedAt: isoDaysAgo(40),
+    },
+  ];
+
+  for (const app of demoApps) await idbSet(app.id, app, DB);
 }
 
 // ─── Kalender-Termine ───────────────────────────────────────────────────────────
@@ -2352,6 +2417,12 @@ if ('serviceWorker' in navigator) {
     await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
   } catch (err) {
     console.error('[idbReady]', err); // z.B. blockiert durch einen anderen offenen Tab mit alter DB-Version
+  }
+  await loadAll();
+  try {
+    await maybeSeedDemoData();
+  } catch (err) {
+    console.error('[maybeSeedDemoData]', err); // Demo-Daten sind optional, dürfen den Start nicht blockieren
   }
   await loadAll();
   try {
