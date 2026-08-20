@@ -1138,6 +1138,31 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .page-header-left h1 { margin-bottom: 0.2rem; }
 .page-header-subtitle { font-size: 0.82rem; color: var(--text-muted); }
 
+/* ─── Onboarding-Slider (nur beim allerersten Besuch) ─────────────────────── */
+.onboarding-body { padding-top: 1.75rem; text-align: center; }
+.onboarding-slide { display: none; }
+.onboarding-slide.active { display: block; animation: pageFadeIn 0.25s ease; }
+.onboarding-icon {
+  width: 56px; height: 56px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1rem;
+}
+.onboarding-slide h2 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+.onboarding-slide p { font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary); max-width: 30ch; margin: 0 auto; }
+.onboarding-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; }
+.onboarding-dot {
+  width: 8px; height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.onboarding-dot.active { background: var(--accent); width: 20px; border-radius: var(--r-full); }
+
 /* ─── Job finden: Portal-Checkliste ───────────────────────────────────────── */
 .jobportal-grid {
   display: grid;

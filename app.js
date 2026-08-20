@@ -2313,6 +2313,45 @@ function dismissInstallBanner() {
   if (el) { el.classList.remove('visible'); setTimeout(() => el.classList.add('hidden'), 400); }
 }
 
+// ─── Onboarding-Slider ──────────────────────────────────────────────────────────
+// Zeigt eine kurze 3-Schritte-Einführung, aber nur beim allerersten Besuch auf
+// einem wirklich leeren, neuen Gerät. isReturningUser kommt als Snapshot aus dem
+// Init (vor jedem Schreibzugriff erfasst) und fängt zusammen mit vorhandenen
+// Bewerbungen praktisch jeden Bestandsnutzer ab, sodass niemand das Popup
+// überraschend nach einem Update zu sehen bekommt.
+let _obStep = 0;
+function maybeShowOnboarding(isReturningUser) {
+  if (localStorage.getItem('jt-onboarding-seen')) { setTimeout(_maybeShowInstallModal, 900); return; }
+  if (isReturningUser) {
+    localStorage.setItem('jt-onboarding-seen', '1'); // Bestandsnutzer: still merken, nie zeigen
+    setTimeout(_maybeShowInstallModal, 900);
+    return;
+  }
+  _obStep = 0;
+  _obGoTo(0);
+  showModal('onboarding-modal');
+}
+
+function _obGoTo(step) {
+  _obStep = step;
+  document.querySelectorAll('.onboarding-slide').forEach(el => el.classList.toggle('active', Number(el.dataset.obSlide) === step));
+  document.querySelectorAll('.onboarding-dot').forEach(el => el.classList.toggle('active', Number(el.dataset.obDot) === step));
+  const isLast = step === document.querySelectorAll('.onboarding-slide').length - 1;
+  document.getElementById('ob-next-btn').textContent = isLast ? "Los geht's" : 'Weiter';
+}
+
+function _obNext() {
+  const total = document.querySelectorAll('.onboarding-slide').length;
+  if (_obStep >= total - 1) { _obFinish(); return; }
+  _obGoTo(_obStep + 1);
+}
+
+function _obFinish() {
+  localStorage.setItem('jt-onboarding-seen', '1');
+  hideModal('onboarding-modal');
+  setTimeout(_maybeShowInstallModal, 900);
+}
+
 // Show install modal once on first ever visit (not standalone, not already dismissed)
 function _maybeShowInstallModal() {
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches
@@ -2405,6 +2444,17 @@ if ('serviceWorker' in navigator) {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
+  // Snapshot BEFORE applyTheme()/applySkin()/applySalaryBlur() below write their own
+  // localStorage keys on every load — otherwise a brand-new visitor would already look
+  // like a "returning user" by the time maybeShowOnboarding() checks these further down.
+  const _isReturningUser = !!(
+    localStorage.getItem('jt-theme') || localStorage.getItem('jt-skin') ||
+    localStorage.getItem('jt-salary-blur') || localStorage.getItem('jt-demo-seeded') ||
+    localStorage.getItem('jt-install-dismissed') || localStorage.getItem('jt-sidebar-collapsed') ||
+    localStorage.getItem('jt-statuses') || localStorage.getItem('jt-settings') ||
+    localStorage.getItem('jt-job-portals') || localStorage.getItem('jt-gd-client-id')
+  );
+
   applyTheme(State.theme);
   applySkin(State.skin);
   applySalaryBlur(State.salaryBlur);
@@ -2419,6 +2469,10 @@ if ('serviceWorker' in navigator) {
     console.error('[idbReady]', err); // z.B. blockiert durch einen anderen offenen Tab mit alter DB-Version
   }
   await loadAll();
+  // Capture BEFORE maybeSeedDemoData() runs — it fills State.all with 4 demo entries
+  // on a genuinely empty install, which would otherwise make that exact visitor look
+  // like they already had data by the time the onboarding check below runs.
+  const _hadDataBeforeSeed = State.all.length > 0;
   try {
     await maybeSeedDemoData();
   } catch (err) {
@@ -2437,8 +2491,9 @@ if ('serviceWorker' in navigator) {
   renderStatusSettings();
   renderSkinButtons();
   lucide.createIcons();
-  // Show install prompt once on first visit
-  setTimeout(_maybeShowInstallModal, 1500);
+  // Onboarding (once ever, brand-new visitors only) runs first; the install prompt
+  // follows only once that's dismissed, so the two never stack on top of each other.
+  setTimeout(() => maybeShowOnboarding(_isReturningUser || _hadDataBeforeSeed), 700);
   // Stale reminder check
   checkStaleReminders();
   checkManualReminders();
