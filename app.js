@@ -1041,11 +1041,30 @@ function parseDelimitedLine(line, delim) {
   return result;
 }
 
+// xlsx.full.min.js (~900KB) is only needed for .xlsx/.xls import, so it isn't part of the
+// initial page load \u2014 it's fetched on demand here, the same lazy-load pattern _gdEnsureLibs()
+// uses for the Google Drive libraries.
+let _xlsxReady = null;
+function _ensureXLSX() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve();
+  if (_xlsxReady) return _xlsxReady;
+  _xlsxReady = new Promise((resolve, reject) => {
+    const src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload  = resolve;
+    s.onerror = () => { _xlsxReady = null; reject(new Error('Excel-Bibliothek konnte nicht geladen werden')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxReady;
+}
+
 // Liest eine CSV/TSV- oder echte .xlsx/.xls-Datei ein und gibt sie einheitlich als
 // Array von Zeilen (je ein Array von Zellwerten, Zeile 0 = Kopfzeile) zur\u00FCck.
 async function parseSpreadsheetRows(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    await _ensureXLSX();
     const buf   = await file.arrayBuffer();
     const wb    = XLSX.read(buf, { type: 'array', cellDates: true });
     const sheet = wb.Sheets[wb.SheetNames[0]];
