@@ -77,7 +77,7 @@ function renderDashboard() {
         <div class="goal-value">
           <span style="font-weight:700;color:${done?'var(--status-acc-fg)':'var(--text-primary)'}">${thisWeek}</span>
           <span style="color:var(--text-muted)">/ ${goal}</span>
-          <button class="goal-edit-btn" onclick="openGoalEditor()" title="Ziel anpassen">
+          <button class="goal-edit-btn" onclick="openGoalEditor()" title="Ziel anpassen" aria-label="Wochenziel anpassen">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
         </div>
@@ -409,17 +409,17 @@ function renderTable() {
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
               <div style="position:relative">
-                <button class="btn btn-icon btn-sm" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" style="color:var(--accent)">
+                <button class="btn btn-icon btn-sm" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern" style="color:var(--accent)">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
               </div>
-              <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten">
+              <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten" aria-label="Bearbeiten">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
-              <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren">
+              <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren" aria-label="Duplizieren">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               </button>
-              <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" style="color:var(--text-muted)">
+              <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" aria-label="Löschen" style="color:var(--text-muted)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
               </button>
             </div>
@@ -460,9 +460,9 @@ function renderTable() {
       <td class="hide-md td-mono" data-col="nextEvent" style="font-size:0.78rem" title="${escAttr(nextEv?.title||'')}">${nextEvLabel}</td>
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
-          <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
-          <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren"><i data-lucide="copy" style="width:14px;height:14px"></i></button>
-          <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" style="color:var(--text-muted)"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten" aria-label="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren" aria-label="Duplizieren"><i data-lucide="copy" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" aria-label="Löschen" style="color:var(--text-muted)"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
         </div>
       </td>
     </tr>`;
@@ -541,7 +541,7 @@ function renderKanban() {
             <div class="kc-bottom">
               ${eventCount > 0 ? `<span class="kc-events">${eventCount} Ereignis${eventCount !== 1 ? 'se' : ''}</span>` : ''}
               <div style="position:relative;margin-left:auto" data-status-anchor>
-                <button class="kc-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
+                <button class="kc-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern">
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
               </div>

@@ -440,6 +440,7 @@ function applySalaryBlur(active) {
     const icon = active ? SVG_EYE_OFF : SVG_EYE;
     b.innerHTML = iconOnly ? icon : `${icon} ${active ? 'Gehalt einblenden' : 'Gehalt verbergen'}`;
     b.title = active ? 'Gehaltsangaben einblenden' : 'Gehaltsangaben vor Blicken schützen';
+    if (iconOnly) b.setAttribute('aria-label', b.title);
     b.classList.toggle('active', active);
   });
 }
