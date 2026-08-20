@@ -3,7 +3,7 @@
  */
 'use strict';
 
-const CACHE_APP_SHELL = 'jobtracker-app-shell-v5';
+const CACHE_APP_SHELL = 'jobtracker-app-shell-v6';
 
 // Every asset the app needs is now same-origin (idb-keyval/lucide/chart.js/fonts are
 // vendored under vendor/, see index.html and app.css) - no CDN cache/origin list needed

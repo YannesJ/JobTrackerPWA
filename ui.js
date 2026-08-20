@@ -33,10 +33,10 @@ function destroyChart(id) { if (Charts[id]) { Charts[id].destroy(); delete Chart
 function renderDashboard() {
   const apps = State.all;
   const total      = apps.length;
-  const interviews = apps.filter(a => a.status === 'Interview').length;
-  const zusagen    = apps.filter(a => a.status === 'Zusage').length;
-  const offene     = apps.filter(a => a.status === 'Offen').length;
-  const absagen    = apps.filter(a => a.status === 'Absage').length;
+  const interviews = apps.filter(a => getStatusKind(a.status) === 'interview').length;
+  const zusagen    = apps.filter(a => getStatusKind(a.status) === 'accepted').length;
+  const offene     = apps.filter(a => getStatusKind(a.status) === 'open').length;
+  const absagen    = apps.filter(a => getStatusKind(a.status) === 'rejected').length;
   const interviewRate = total ? Math.round(((interviews + zusagen) / total) * 100) : 0;
 
   const responseTimes = apps
@@ -182,7 +182,7 @@ function renderCharts() {
 
   // ── Rejection Pie ─────────────────────────────────────────────────────────
   const rejMap = {};
-  apps.filter(a => a.status === 'Absage').forEach(a => {
+  apps.filter(a => getStatusKind(a.status) === 'rejected').forEach(a => {
     const r = a.rejectionReason?.trim() || 'Kein Grund';
     rejMap[r] = (rejMap[r]||0) + 1;
   });
@@ -228,8 +228,9 @@ function renderCharts() {
     const s = a.source || 'Unbekannt';
     if (!srcMap[s]) srcMap[s] = { total:0, interview:0, zusage:0 };
     srcMap[s].total++;
-    if (a.status === 'Interview') srcMap[s].interview++;
-    if (a.status === 'Zusage')    { srcMap[s].interview++; srcMap[s].zusage++; } // Zusage counts as interview too
+    const kind = getStatusKind(a.status);
+    if (kind === 'interview') srcMap[s].interview++;
+    if (kind === 'accepted')  { srcMap[s].interview++; srcMap[s].zusage++; } // Zusage counts as interview too
   });
   const srcLabels = Object.keys(srcMap);
   destroyChart('source');
@@ -370,10 +371,16 @@ function renderTable() {
 
     const SVG_SORT = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>`;
 
+    const SVG_COLS = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="10" y="3" width="4" height="18" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>`;
+
     list.innerHTML = `
       <div class="list-sort-bar">
         <span class="list-count">${State.filtered.length} Einträge</span>
-        <div style="position:relative">
+        <div class="list-sort-bar-btns">
+          <button class="list-sort-btn" onclick="toggleColumnsMenu(event)">
+            ${SVG_COLS}
+            <span>Spalten</span>
+          </button>
           <button class="list-sort-btn" onclick="toggleMobileSortMenu(event)">
             ${SVG_SORT}
             <span>${sortLabel}</span>
@@ -383,9 +390,10 @@ function renderTable() {
       <div class="list-cards">
         ${State.filtered.map(a => {
           const lastTs  = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-          const threshold_t = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+          const threshold_t = State.settings?.staleThreshold?.[a.status] ?? (getStatusKind(a.status) === 'open' ? 14 : 0);
           const stale   = threshold_t > 0 && daysSince(lastTs) > threshold_t;
           const dateStr = fmtDateTime(a.applicationDate);
+          const cols    = State.tableColumns;
           return `
           <div class="app-card" onclick="openDetail('${a.id}')">
             <div class="app-card-accent s-${statusSlot(a.status)}"></div>
@@ -399,26 +407,18 @@ function renderTable() {
               </div>
               <div class="app-card-position">${escHtml(a.position)}</div>
               <div class="app-card-meta">
-                ${a.source ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
-                <span class="app-card-chip app-card-chip--mono">${dateStr}</span>
-                ${a.expectedSalary ? `<span class="app-card-chip app-card-chip--accent jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
-                ${starsHTML(a.priority, 11)}
+                ${(a.source && cols.source) ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
+                ${cols.applicationDate ? `<span class="app-card-chip app-card-chip--mono">${dateStr}</span>` : ''}
+                ${(a.expectedSalary && cols.expectedSalary) ? `<span class="app-card-chip app-card-chip--accent jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+                ${cols.priority ? starsHTML(a.priority, 11) : ''}
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
-              <div style="position:relative">
-                <button class="btn btn-icon btn-sm" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern" style="color:var(--accent)">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-              </div>
-              <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten" aria-label="Bearbeiten">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <button class="app-card-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren" aria-label="Duplizieren">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </button>
-              <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" aria-label="Löschen" style="color:var(--text-muted)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+              <button class="app-card-menu-btn" onclick="toggleCardMenu(event,'${a.id}')" title="Weitere Aktionen" aria-label="Weitere Aktionen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
               </button>
             </div>
           </div>`;
@@ -432,7 +432,7 @@ function renderTable() {
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = State.filtered.map(a => {
     const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-    const threshold_d = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+    const threshold_d = State.settings?.staleThreshold?.[a.status] ?? (getStatusKind(a.status) === 'open' ? 14 : 0);
     const stale  = threshold_d > 0 && daysSince(lastTs) > threshold_d;
     const nextEv = nextEventForApp(a.id);
     const nextEvLabel = nextEv ? `${fmtDateShort(nextEv.date)}${nextEv.time ? ` · ${escHtml(nextEv.time)}` : ''}` : '-';
@@ -498,11 +498,12 @@ function renderKanban() {
 
     const cards = colApps.map(a => {
       const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-      const threshold = State.settings.staleThreshold?.[status] ?? (status === 'Offen' ? 14 : 0);
+      const threshold = State.settings.staleThreshold?.[status] ?? (getStatusKind(status) === 'open' ? 14 : 0);
       const stale     = threshold > 0 && daysSince(lastTs) > threshold;
       const eventCount = a.history?.length || 0;
       // Get the most recent history note to show as preview
       const lastNote = [...(a.history||[])].reverse().find(h => h.note)?.note || '';
+      const kf = State.kanbanCardFields;
 
       return `<div class="kanban-card s-${statusSlot(status)}"
         draggable="true"
@@ -524,20 +525,21 @@ function renderKanban() {
                 ${stale ? '<span class="kanban-stale-dot" title="Lange keine Änderung"></span>' : ''}
                 ${escHtml(a.company)}
               </span>
-              ${(a.contactName || a.contactEmail) ? `
+              ${(kf.contact && (a.contactName || a.contactEmail)) ? `
                 <span class="kc-person" title="${escHtml(a.contactName||a.contactEmail)}">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </span>` : ''}
             </div>
             <div class="kc-position">${escHtml(a.position)}</div>
             <div class="kc-meta">
-              <span class="kc-date">${fmtDateShort(a.applicationDate)}</span>
-              ${a.expectedSalary ? `<span class="kc-salary jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
-              ${starsHTML(a.priority, 11)}
+              ${(a.source && kf.source) ? `<span class="kc-source">${escHtml(a.source)}</span>` : ''}
+              ${kf.date ? `<span class="kc-date">${fmtDateShort(a.applicationDate)}</span>` : ''}
+              ${(a.expectedSalary && kf.salary) ? `<span class="kc-salary jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+              ${kf.priority ? starsHTML(a.priority, 11) : ''}
             </div>
-            ${lastNote ? `<div class="kc-note-pill">${escHtml(lastNote)}</div>` : ''}
+            ${(kf.note && lastNote) ? `<div class="kc-note-pill">${escHtml(lastNote)}</div>` : ''}
             <div class="kc-bottom">
-              ${eventCount > 0 ? `<span class="kc-events">${eventCount} Ereignis${eventCount !== 1 ? 'se' : ''}</span>` : ''}
+              ${(kf.events && eventCount > 0) ? `<span class="kc-events">${eventCount} Ereignis${eventCount !== 1 ? 'se' : ''}</span>` : ''}
               <div style="position:relative;margin-left:auto" data-status-anchor>
                 <button class="kc-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern">
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>

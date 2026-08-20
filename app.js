@@ -41,24 +41,63 @@ const EVENTS    = createStore('jobtracker', 'events');    // { id, appId, date, 
 
 // ─── Status-Kategorien (individuell konfigurierbar) ────────────────────────────
 // Muss vor `State` stehen, da State.statuses beim Erstellen bereits loadStatuses() aufruft.
-const DEFAULT_STATUSES = [
-  { name: 'Offen',     color: '#3b82f6' },
-  { name: 'Interview', color: '#f59e0b' },
-  { name: 'Absage',    color: '#ef4444' },
-  { name: 'Zusage',    color: '#22c55e' },
+// `kind` sagt der Statistik (Dashboard), wie eine - ggf. umbenannte oder frei
+// erfundene - Kategorie zu zählen ist, unabhängig vom (änderbaren) Namen.
+const STATUS_KINDS = [
+  { key: 'open',      label: 'Offen' },
+  { key: 'interview', label: 'Interview' },
+  { key: 'accepted',  label: 'Zusage' },
+  { key: 'rejected',  label: 'Absage' },
+  { key: 'other',     label: 'Neutral' },
 ];
+const DEFAULT_STATUSES = [
+  { name: 'Offen',     color: '#3b82f6', kind: 'open' },
+  { name: 'Interview', color: '#f59e0b', kind: 'interview' },
+  { name: 'Absage',    color: '#ef4444', kind: 'rejected' },
+  { name: 'Zusage',    color: '#22c55e', kind: 'accepted' },
+];
+// Für Alt-Daten ohne `kind` (vor diesem Feature gespeichert): an einem der
+// Standardnamen erkennen, sonst neutral - besser als eine falsche Statistik.
+function _inferStatusKind(name) {
+  return DEFAULT_STATUSES.find(s => s.name === name)?.kind || 'other';
+}
 function loadStatuses() {
   try {
     const stored = JSON.parse(localStorage.getItem('jt-statuses') || 'null');
-    if (Array.isArray(stored) && stored.length) return stored;
+    if (Array.isArray(stored) && stored.length) {
+      return stored.map(s => ({ ...s, kind: STATUS_KINDS.some(k => k.key === s.kind) ? s.kind : _inferStatusKind(s.name) }));
+    }
   } catch { /* ignore malformed data */ }
   return DEFAULT_STATUSES.map(s => ({ ...s }));
 }
 function saveStatuses() {
   localStorage.setItem('jt-statuses', JSON.stringify(State.statuses));
 }
+function getStatusKind(name) {
+  return State.statuses.find(s => s.name === name)?.kind || 'other';
+}
+function updateStatusKind(idx, kind) {
+  const s = State.statuses[idx];
+  if (!s || !STATUS_KINDS.some(k => k.key === kind)) return;
+  s.kind = kind;
+  saveStatuses();
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboard();
+}
 function getStatusColor(name) {
   return State.statuses.find(s => s.name === name)?.color || '#8888a8';
+}
+// Status-Filter: welche Status-Kategorien im Tabellen-/Kanban-Filter ausgeblendet
+// sind. Gespeichert werden nur die ausgeblendeten Namen (nicht die sichtbaren),
+// damit neu angelegte Kategorien automatisch sichtbar bleiben.
+function loadStatusFilterHidden() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-status-filter-hidden') || 'null');
+    if (Array.isArray(stored)) return new Set(stored);
+  } catch { /* ignore malformed data */ }
+  return new Set();
+}
+function saveStatusFilterHidden() {
+  localStorage.setItem('jt-status-filter-hidden', JSON.stringify([...State.statusFilterHidden]));
 }
 // Index der Kategorie in State.statuses - dient als stabiler CSS-Hook (s-<i>).
 // Unbekannte/gelöschte Status fallen auf Slot 0 zurück, statt die Anzeige zu brechen.
@@ -101,6 +140,9 @@ function toggleTableColumn(key) {
   State.tableColumns[key] = !State.tableColumns[key];
   saveTableColumns();
   applyTableColumnVisibility();
+  // Die mobile Kartenliste liest State.tableColumns direkt beim Rendern (keine
+  // CSS-Attribut-Abkürzung wie bei der Desktop-Tabelle) - braucht daher ein Re-Render.
+  if (window.matchMedia('(max-width: 640px)').matches) renderTable();
 }
 // Setzt die versteckten Spalten als ein Attribut auf .table-wrap statt pro Zelle
 // einzeln zu toggeln - eine CSS-Regel pro Spalte (siehe app.css) reicht damit aus.
@@ -108,6 +150,86 @@ function applyTableColumnVisibility() {
   const wrap = document.querySelector('.table-wrap');
   if (!wrap) return;
   wrap.dataset.hideCols = TABLE_COLUMNS.filter(c => !State.tableColumns[c.key]).map(c => c.key).join(' ');
+}
+
+// ─── Kanban-Karten-Felder (Bewerbungen-Ansicht) ────────────────────────────────
+// Analog zu TABLE_COLUMNS: Firma, Position und der Status-Button bleiben fest auf
+// jeder Karte sichtbar, alles hier ist per "Karten"-Button ein-/ausblendbar.
+// "source" ist neu (stand vorher nie auf der Karte) und startet daher aus.
+const KANBAN_CARD_FIELDS = [
+  { key: 'source',   label: 'Quelle' },
+  { key: 'date',     label: 'Datum' },
+  { key: 'salary',   label: 'Gehalt' },
+  { key: 'priority', label: 'Priorität' },
+  { key: 'contact',  label: 'Ansprechpartner' },
+  { key: 'note',     label: 'Notiz-Vorschau' },
+  { key: 'events',   label: 'Ereigniszähler' },
+];
+const DEFAULT_KANBAN_CARD_FIELDS = {
+  source: false, date: true, salary: true, priority: true,
+  contact: true, note: true, events: true,
+};
+function loadKanbanCardFields() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-kanban-fields') || 'null');
+    if (stored && typeof stored === 'object') return { ...DEFAULT_KANBAN_CARD_FIELDS, ...stored };
+  } catch { /* ignore malformed data */ }
+  return { ...DEFAULT_KANBAN_CARD_FIELDS };
+}
+function saveKanbanCardFields() {
+  localStorage.setItem('jt-kanban-fields', JSON.stringify(State.kanbanCardFields));
+}
+function toggleKanbanCardField(key) {
+  State.kanbanCardFields[key] = !State.kanbanCardFields[key];
+  saveKanbanCardFields();
+  renderKanban();
+}
+function toggleKanbanFieldsMenu(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.columns-popover').forEach(p => p.remove());
+
+  const popover = document.createElement('div');
+  popover.className = 'columns-popover';
+  popover.innerHTML = `
+    <div class="columns-popover-title">Karteninfos anzeigen</div>
+    ${KANBAN_CARD_FIELDS.map(c => `
+      <label class="columns-popover-item">
+        <input type="checkbox" ${State.kanbanCardFields[c.key] ? 'checked' : ''} onchange="toggleKanbanCardField('${c.key}')" />
+        ${escHtml(c.label)}
+      </label>
+    `).join('')}
+  `;
+
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.right - popRect.width, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
 }
 
 // ── Farbableitung: aus einer einzelnen Hex-Farbe werden Badge/Akzent-Farben
@@ -182,16 +304,10 @@ function injectStatusStyles() {
 [data-theme="dark"] .tl-dyn.s-${i} { color:${v.fgD}; }`;
   }).join('\n');
 }
-// Befüllt Status-<select>-Elemente (Filter + Formular) mit den aktuellen Kategorien.
+// Befüllt Status-<select>-Elemente (Formular) mit den aktuellen Kategorien und
+// aktualisiert den Status-Filter-Button (Mehrfachauswahl, siehe toggleStatusFilterMenu).
 function renderStatusSelectOptions() {
   const optsHtml = State.statuses.map(s => `<option value="${escAttr(s.name)}">${escHtml(s.name)}</option>`).join('');
-
-  const filterSel = document.getElementById('filter-status');
-  if (filterSel) {
-    const prev = filterSel.value;
-    filterSel.innerHTML = `<option value="">Alle</option>` + optsHtml;
-    filterSel.value = State.statuses.some(s => s.name === prev) ? prev : '';
-  }
 
   const formSel = document.getElementById('f-status');
   if (formSel) {
@@ -199,6 +315,103 @@ function renderStatusSelectOptions() {
     formSel.innerHTML = optsHtml;
     formSel.value = State.statuses.some(s => s.name === prev) ? prev : (State.statuses[0]?.name || '');
   }
+
+  // Ausgeblendete Kategorien, die es nicht mehr gibt (gelöscht/umbenannt), entfernen
+  const validNames = new Set(State.statuses.map(s => s.name));
+  let changed = false;
+  for (const hidden of [...State.statusFilterHidden]) {
+    if (!validNames.has(hidden)) { State.statusFilterHidden.delete(hidden); changed = true; }
+  }
+  if (changed) saveStatusFilterHidden();
+
+  updateStatusFilterLabel();
+}
+
+function updateStatusFilterLabel() {
+  const label = document.getElementById('filter-status-label');
+  const btn   = document.getElementById('filter-status-btn');
+  if (!label || !btn) return;
+
+  const total   = State.statuses.length;
+  const visible = State.statuses.filter(s => !State.statusFilterHidden.has(s.name));
+  const hiddenCount = total - visible.length;
+
+  if (hiddenCount === 0) label.textContent = 'Alle Status';
+  else if (visible.length === 0) label.textContent = 'Kein Status';
+  else if (visible.length <= 2) label.textContent = visible.map(s => s.name).join(', ');
+  else label.textContent = `${visible.length} von ${total} Status`;
+
+  btn.classList.toggle('active', hiddenCount > 0);
+}
+
+// ─── Status-Filter (Mehrfachauswahl, Popover) ──────────────────────────────────
+function toggleStatusFilterOption(name) {
+  if (State.statusFilterHidden.has(name)) State.statusFilterHidden.delete(name);
+  else State.statusFilterHidden.add(name);
+  saveStatusFilterHidden();
+  updateStatusFilterLabel();
+  applyFilters();
+}
+
+function setAllStatusFilters(showAll) {
+  State.statusFilterHidden = showAll ? new Set() : new Set(State.statuses.map(s => s.name));
+  saveStatusFilterHidden();
+  updateStatusFilterLabel();
+  applyFilters();
+  document.querySelectorAll('.status-filter-popover').forEach(p => p.remove());
+}
+
+function toggleStatusFilterMenu(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-filter-popover').forEach(p => p.remove());
+
+  const popover = document.createElement('div');
+  popover.className = 'columns-popover status-filter-popover';
+  popover.innerHTML = `
+    <div class="columns-popover-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Status anzeigen</span>
+      <button type="button" class="btn btn-ghost btn-xs" style="text-transform:none;letter-spacing:0;font-weight:600" onclick="setAllStatusFilters(${State.statusFilterHidden.size > 0})">${State.statusFilterHidden.size > 0 ? 'Alle' : 'Keine'}</button>
+    </div>
+    ${State.statuses.map(s => `
+      <label class="columns-popover-item">
+        <input type="checkbox" ${State.statusFilterHidden.has(s.name) ? '' : 'checked'} onchange="toggleStatusFilterOption('${escJs(s.name)}')" />
+        ${escHtml(s.name)}
+      </label>
+    `).join('')}
+  `;
+
+  // Fixed-positioniert & an <body> gehängt (wie beim Spalten-Popover), rechtsbündig
+  // zum Button, damit es bei einem rechts sitzenden Button nicht rechts abgeschnitten wird.
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.left, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
 }
 
 // ─── App State ────────────────────────────────────────────────────────────────
@@ -220,8 +433,12 @@ const State = {
   settings: loadSettings(),
   // Individuell konfigurierbare Status-Kategorien
   statuses: loadStatuses(),
+  // Im Status-Filter (Tabelle/Kanban) ausgeblendete Kategorien
+  statusFilterHidden: loadStatusFilterHidden(),
   // Welche optionalen Tabellenspalten sichtbar sind
   tableColumns: loadTableColumns(),
+  // Welche optionalen Infos auf Kanban-Karten sichtbar sind
+  kanbanCardFields: loadKanbanCardFields(),
   // Kalender-Termine
   events: [],
   calendarMonth: (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })(),
@@ -331,16 +548,34 @@ function tlClass(s) {
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
-function toast(msg, type = 'info') {
+// `opts.actionLabel` + `opts.onAction` add a clickable action (z.B. "Rückgängig")
+// to the toast; clicking it cancels the auto-dismiss and runs the callback.
+function toast(msg, type = 'info', opts = {}) {
   const root = document.getElementById('toast-root');
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
-  el.textContent = msg;
-  root.appendChild(el);
-  setTimeout(() => {
+
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = msg;
+  el.appendChild(text);
+
+  const dismiss = () => {
     el.classList.add('toast-out');
     setTimeout(() => el.remove(), 280);
-  }, 2800);
+  };
+
+  if (opts.actionLabel && opts.onAction) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = opts.actionLabel;
+    btn.onclick = () => { clearTimeout(timer); opts.onAction(); dismiss(); };
+    el.appendChild(btn);
+  }
+
+  root.appendChild(el);
+  const timer = setTimeout(dismiss, opts.actionLabel ? 5000 : 2800);
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -576,11 +811,10 @@ function navigate(tab) {
 // ─── Filters & Sort ───────────────────────────────────────────────────────────
 function applyFilters() {
   const search = document.getElementById('filter-search')?.value?.toLowerCase() || '';
-  const status = document.getElementById('filter-status')?.value || '';
   const source = document.getElementById('filter-source')?.value || '';
 
   State.filtered = State.all.filter(a => {
-    if (status && a.status !== status) return false;
+    if (State.statusFilterHidden.has(a.status)) return false;
     if (source && a.source !== source) return false;
     if (search) {
       const hay = [
@@ -772,10 +1006,29 @@ async function onTouchEnd(e) {
 async function _applyDrop(id, newStatus) {
   const app = State.all.find(a => a.id === id);
   if (app && app.status !== newStatus) {
+    const oldStatus  = app.status;
+    const oldHistory = app.history ? [...app.history] : [];
     app.status  = newStatus;
     app.history = [...(app.history || []), { status: newStatus, timestamp: nowISO() }];
     await saveApp(app);
-    toast(`Status → ${newStatus}`, 'success');
+    toast(`Status → ${newStatus}`, 'success', {
+      actionLabel: 'Rückgängig',
+      onAction: () => undoStatusChange(id, oldStatus, oldHistory),
+    });
+  }
+}
+
+// Setzt Status + Verlauf einer Bewerbung auf einen zuvor gemerkten Stand zurück
+// - genutzt vom "Rückgängig"-Toast-Button nach Drag&Drop/Schnell-Statuswechsel.
+async function undoStatusChange(id, oldStatus, oldHistory) {
+  const app = State.all.find(a => a.id === id);
+  if (!app) return;
+  app.status  = oldStatus;
+  app.history = oldHistory;
+  await saveApp(app);
+  toast(`Status → ${oldStatus}`, 'info');
+  if (!document.getElementById('detail-modal').classList.contains('hidden')) {
+    openDetail(id);
   }
 }
 
@@ -852,7 +1105,7 @@ function duplicateApp(id) {
 }
 
 function toggleRejectionField() {
-  const show = document.getElementById('f-status').value === 'Absage';
+  const show = getStatusKind(document.getElementById('f-status').value) === 'rejected';
   document.getElementById('f-rejection-group').classList.toggle('hidden', !show);
 }
 
@@ -962,7 +1215,7 @@ function openDetail(id) {
 
   // Reminder - settings-based threshold per status
   const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
-  const threshold = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
+  const threshold = State.settings?.staleThreshold?.[a.status] ?? (getStatusKind(a.status) === 'open' ? 14 : 0);
   const isStale   = threshold > 0 && daysSince(lastTs) > threshold;
   const remEl     = document.getElementById('d-reminder');
   if (remEl) {
@@ -1513,6 +1766,64 @@ function toggleColumnsMenu(e) {
   }, 0);
 }
 
+// ─── Mobile Karten-Aktionsmenü (Bearbeiten/Duplizieren/Löschen hinter "⋯") ─────
+function toggleCardMenu(e, id) {
+  e.stopPropagation();
+  document.querySelectorAll('.card-menu-popover').forEach(p => p.remove());
+
+  const popover = document.createElement('div');
+  popover.className = 'sort-popover card-menu-popover';
+  popover.innerHTML = `
+    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();openForm('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Bearbeiten
+    </div>
+    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();duplicateApp('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Duplizieren
+    </div>
+    <div class="sort-popover-item card-menu-item-danger" onclick="event.stopPropagation();closeCardMenu();confirmDelete('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      Löschen
+    </div>
+  `;
+
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.right - popRect.width, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.right      = 'auto';
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
+}
+function closeCardMenu() {
+  document.querySelectorAll('.card-menu-popover').forEach(p => p.remove());
+}
+
 async function importCSV(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1647,7 +1958,7 @@ async function countDueBadgeItems() {
     const t       = thr[app.status];
     if (t && days >= t) count++;
     // Follow-up due
-    if (followUpDays > 0 && ['Offen', 'Interview'].includes(app.status) && days >= followUpDays) count++;
+    if (followUpDays > 0 && ['open', 'interview'].includes(getStatusKind(app.status)) && days >= followUpDays) count++;
   });
   return count;
 }
@@ -1678,7 +1989,7 @@ function checkStaleReminders() {
     }
 
     // Global follow-up: fires for Offen/Interview if no response in followUpDays
-    if (followUpDays > 0 && ['Offen', 'Interview'].includes(app.status) && daysSt >= followUpDays) {
+    if (followUpDays > 0 && ['open', 'interview'].includes(getStatusKind(app.status)) && daysSt >= followUpDays) {
       const fuKey = `jt-followup-${app.id}`;
       if (localStorage.getItem(fuKey) !== today) {
         localStorage.setItem(fuKey, today);
@@ -1705,7 +2016,7 @@ async function deleteReminder(appId) {
 async function getReminder(appId) { try { return await idbGet(`reminder-${appId}`, REMINDERS); } catch { return null; } }
 
 async function autoCleanReminder(app) {
-  if (['Zusage', 'Absage'].includes(app.status)) await deleteReminder(app.id);
+  if (['accepted', 'rejected'].includes(getStatusKind(app.status))) await deleteReminder(app.id);
 }
 
 async function checkManualReminders() {
@@ -1732,8 +2043,8 @@ function checkWeeklySummary() {
   const key = 'jt-weekly-summary'; const today = new Date().toISOString().slice(0, 10);
   if (new Date().getDay() !== 1 || localStorage.getItem(key) === today) return;
   localStorage.setItem(key, today);
-  const offene = State.all.filter(a => a.status === 'Offen').length;
-  const interviews = State.all.filter(a => a.status === 'Interview').length;
+  const offene = State.all.filter(a => getStatusKind(a.status) === 'open').length;
+  const interviews = State.all.filter(a => getStatusKind(a.status) === 'interview').length;
   fireNotification('📋 Wöchentliche Zusammenfassung', `${State.all.length} Bewerbungen · ${offene} offen · ${interviews} im Interview`, 'weekly-summary');
 }
 
@@ -1946,27 +2257,41 @@ function renderStatusSettings() {
   const el = document.getElementById('status-settings-body');
   if (!el) return;
   el.innerHTML = `
+    <p class="status-kind-hint">
+      „Zählt als" bestimmt, wie eine Kategorie in die Dashboard-Statistiken einfließt
+      (z.B. Interview-Rate, offene Bewerbungen) - unabhängig vom Namen.
+    </p>
     <div class="status-manage-list">
       ${State.statuses.map((s, i) => {
         const count = State.all.filter(a => a.status === s.name).length;
         return `
-        <div class="status-manage-row">
-          <input type="color" class="status-color-input" value="${escAttr(s.color)}"
-            oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
-          <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
-            onchange="renameStatus(${i}, this.value)" placeholder="Name" />
-          <span class="status-count" title="${count} Bewerbung${count === 1 ? '' : 'en'} mit diesem Status">${count}</span>
-          <div class="status-move-btns">
-            <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},-1)" title="Nach oben" ${i === 0 ? 'disabled' : ''}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-            </button>
-            <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},1)" title="Nach unten" ${i === State.statuses.length - 1 ? 'disabled' : ''}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="status-manage-item">
+          <div class="status-manage-row">
+            <input type="color" class="status-color-input" value="${escAttr(s.color)}"
+              oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
+            <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
+              onchange="renameStatus(${i}, this.value)" placeholder="Name" />
+            <div class="status-move-btns">
+              <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},-1)" title="Nach oben" ${i === 0 ? 'disabled' : ''}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+              </button>
+              <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},1)" title="Nach unten" ${i === State.statuses.length - 1 ? 'disabled' : ''}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+            </div>
+            <button type="button" class="btn btn-icon btn-sm" onclick="deleteStatus(${i})" title="Kategorie löschen" ${State.statuses.length <= 1 ? 'disabled' : ''} style="color:var(--text-muted)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             </button>
           </div>
-          <button type="button" class="btn btn-icon btn-sm" onclick="deleteStatus(${i})" title="Kategorie löschen" ${State.statuses.length <= 1 ? 'disabled' : ''} style="color:var(--text-muted)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-          </button>
+          <div class="status-manage-row status-kind-row">
+            <label class="status-kind-label">
+              Zählt als
+              <select class="form-select status-kind-select" onchange="updateStatusKind(${i}, this.value)">
+                ${STATUS_KINDS.map(k => `<option value="${k.key}" ${s.kind === k.key ? 'selected' : ''}>${k.label}</option>`).join('')}
+              </select>
+            </label>
+            <span class="status-count" title="${count} Bewerbung${count === 1 ? '' : 'en'} mit diesem Status">${count}</span>
+          </div>
         </div>`;
       }).join('')}
     </div>
@@ -1991,7 +2316,7 @@ function addStatus(e) {
     toast('Diese Kategorie gibt es schon', 'warning');
     return false;
   }
-  State.statuses.push({ name, color: colorEl.value });
+  State.statuses.push({ name, color: colorEl.value, kind: 'other' });
   saveStatuses();
   injectStatusStyles();
   renderStatusSettings();
@@ -2044,6 +2369,12 @@ async function renameStatus(idx, rawName) {
   _renameStatusKey(State.settings.pushOnStatus, oldName, newName);
   _renameStatusKey(State.kanbanSort, oldName, newName);
   saveSettings();
+
+  if (State.statusFilterHidden.has(oldName)) {
+    State.statusFilterHidden.delete(oldName);
+    State.statusFilterHidden.add(newName);
+    saveStatusFilterHidden();
+  }
 
   injectStatusStyles();
   await loadAll();
@@ -2483,12 +2814,16 @@ async function applyQuickStatus(id, newStatus) {
   document.querySelectorAll('.status-popover').forEach(p => p.remove());
   const app = State.all.find(a => a.id === id);
   if (!app || app.status === newStatus) return;
-  const oldStatus = app.status;
+  const oldStatus  = app.status;
+  const oldHistory = app.history ? [...app.history] : [];
   app.status  = newStatus;
   app.history = [...(app.history || []), { status: newStatus, timestamp: nowISO() }];
-  if (oldStatus !== newStatus) schedulePushIfEnabled(app, newStatus);
+  schedulePushIfEnabled(app, newStatus);
   await saveApp(app);
-  toast(`Status → ${newStatus}`, 'success');
+  toast(`Status → ${newStatus}`, 'success', {
+    actionLabel: 'Rückgängig',
+    onAction: () => undoStatusChange(id, oldStatus, oldHistory),
+  });
   if (!document.getElementById('detail-modal').classList.contains('hidden')) {
     openDetail(id);
   }
