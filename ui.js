@@ -126,7 +126,7 @@ function renderDashboard() {
   ].map(s => `
     <div class="salary-card">
       <div class="salary-label">${s.label}</div>
-      <div class="salary-value">${s.value}</div>
+      <div class="salary-value jt-money">${s.value}</div>
     </div>`).join('');
 
   lucide.createIcons();
@@ -402,7 +402,7 @@ function renderTable() {
               <div class="app-card-meta">
                 ${a.source ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
                 <span class="app-card-chip app-card-chip--mono">${dateStr}</span>
-                ${a.expectedSalary ? `<span class="app-card-chip app-card-chip--accent">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+                ${a.expectedSalary ? `<span class="app-card-chip app-card-chip--accent jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
@@ -447,7 +447,7 @@ function renderTable() {
       </td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'–')}</td>
       <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
-      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
+      <td class="hide-md td-mono jt-money" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
           <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
@@ -521,7 +521,7 @@ function renderKanban() {
             <div class="kc-position">${escHtml(a.position)}</div>
             <div class="kc-meta">
               <span class="kc-date">${fmtDateShort(a.applicationDate)}</span>
-              ${a.expectedSalary ? `<span class="kc-salary">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
+              ${a.expectedSalary ? `<span class="kc-salary jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
             </div>
             ${lastNote ? `<div class="kc-note-pill">${escHtml(lastNote)}</div>` : ''}
             <div class="kc-bottom">

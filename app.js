@@ -174,6 +174,7 @@ const State = {
   },
   theme:  localStorage.getItem('jt-theme') || 'dark',
   skin:   localStorage.getItem('jt-skin') || 'neon',
+  salaryBlur: localStorage.getItem('jt-salary-blur') === '1',
   // Persisted settings
   settings: loadSettings(),
   // Individuell konfigurierbare Status-Kategorien
@@ -290,6 +291,8 @@ function toast(msg, type = 'info') {
 const SVG_SUN  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
 const SVG_MOON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 const SVG_MONITOR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
+const SVG_EYE     = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const SVG_EYE_OFF = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
 
 // ─── Sidebar collapse (desktop) ─────────────────────────────────────────────────
 function toggleSidebar() {
@@ -365,6 +368,25 @@ function applySkin(skin) {
   if (document.getElementById('page-dashboard')?.classList.contains('active')) {
     renderCharts();
   }
+}
+
+// ─── Gehalts-Sichtschutz ────────────────────────────────────────────────────────
+// Blendet alle Gehaltsangaben (.jt-money) per CSS-Filter aus, z.B. um die
+// Bewerbungsliste vor anderen zu zeigen, ohne das eigene Wunschgehalt preiszugeben.
+function applySalaryBlur(active) {
+  State.salaryBlur = active;
+  localStorage.setItem('jt-salary-blur', active ? '1' : '0');
+  document.documentElement.classList.toggle('blur-salary', active);
+  document.querySelectorAll('[data-salary-blur-btn]').forEach(b => {
+    const iconOnly = b.dataset.salaryBlurBtn === 'icon';
+    const icon = active ? SVG_EYE_OFF : SVG_EYE;
+    b.innerHTML = iconOnly ? icon : `${icon} ${active ? 'Gehalt einblenden' : 'Gehalt verbergen'}`;
+    b.title = active ? 'Gehaltsangaben einblenden' : 'Gehaltsangaben vor Blicken schützen';
+    b.classList.toggle('active', active);
+  });
+}
+function toggleSalaryBlur() {
+  applySalaryBlur(!State.salaryBlur);
 }
 
 // ─── DB CRUD ──────────────────────────────────────────────────────────────────
@@ -1748,9 +1770,14 @@ function moveStatus(idx, dir) {
 }
 
 // ─── Google Drive Sync ────────────────────────────────────────────────────────
-// Fill in your credentials from https://console.cloud.google.com/
-const GD_CLIENT_ID = '';   // e.g. '123456789-abc.apps.googleusercontent.com'
-const GD_API_KEY   = '';   // e.g. 'AIzaSy...'
+// Client ID + API Key come from https://console.cloud.google.com/apis/credentials and
+// are entered by the user via the credentials modal (openGoogleDriveCredentialsModal()),
+// not hardcoded here — app.js ships static to every user, so a value baked in at build
+// time would leak into the public source and only work for one Google Cloud project.
+const GD_LS_CLIENT_ID = 'jt-gd-client-id';
+const GD_LS_API_KEY   = 'jt-gd-api-key';
+function gdGetClientId() { return localStorage.getItem(GD_LS_CLIENT_ID) || ''; }
+function gdGetApiKey()   { return localStorage.getItem(GD_LS_API_KEY) || ''; }
 
 const GD_SCOPE       = 'https://www.googleapis.com/auth/drive.appdata';
 const GD_BACKUP_NAME = 'backup.json';
@@ -1763,8 +1790,8 @@ let _gdInitialized = false;  // GAPI client loaded
 
 /** Entry point called from UI button */
 async function syncToGoogleDrive() {
-  if (!GD_CLIENT_ID || !GD_API_KEY) {
-    toast('Google Drive: CLIENT_ID und API_KEY in app.js eintragen.', 'warning');
+  if (!gdGetClientId() || !gdGetApiKey()) {
+    openGoogleDriveCredentialsModal();
     return;
   }
   _gdUpdateBtn('loading');
@@ -1805,7 +1832,7 @@ function _gdEnsureLibs() {
         if (typeof gapi !== 'undefined') {
           gapi.load('client', async () => {
             if (!_gdInitialized) {
-              await gapi.client.init({ apiKey: GD_API_KEY, discoveryDocs: [GD_DISCOVERY] });
+              await gapi.client.init({ apiKey: gdGetApiKey(), discoveryDocs: [GD_DISCOVERY] });
               _gdInitialized = true;
             }
             resolve();
@@ -1830,7 +1857,7 @@ function _gdEnsureToken() {
 
     if (!_gdTokenClient) {
       _gdTokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GD_CLIENT_ID,
+        client_id: gdGetClientId(),
         scope: GD_SCOPE,
         callback: (resp) => {
           if (resp.error) {
@@ -2025,6 +2052,47 @@ function _gdUpdateStatus(state) {
   }
 }
 
+/** Open the credentials modal, prefilled with whatever is currently stored */
+function openGoogleDriveCredentialsModal() {
+  document.getElementById('gd-client-id-input').value = gdGetClientId();
+  document.getElementById('gd-api-key-input').value = gdGetApiKey();
+  showModal('gd-credentials-modal');
+}
+
+/** Save Client ID + API Key from the modal, then immediately (re)try the sync */
+function saveGoogleDriveCredentials() {
+  const clientId = document.getElementById('gd-client-id-input').value.trim();
+  const apiKey   = document.getElementById('gd-api-key-input').value.trim();
+  if (!clientId || !apiKey) {
+    toast('Bitte Client ID und API Key eingeben.', 'warning');
+    return;
+  }
+  localStorage.setItem(GD_LS_CLIENT_ID, clientId);
+  localStorage.setItem(GD_LS_API_KEY, apiKey);
+  // Force gapi/GSI to pick up the new values instead of reusing a client built from old ones
+  _gdInitialized  = false;
+  _gdTokenClient  = null;
+  _gdAccessToken  = null;
+  hideModal('gd-credentials-modal');
+  toast('Google Drive Zugangsdaten gespeichert ✓', 'success');
+  syncToGoogleDrive();
+}
+
+/** Remove stored credentials (e.g. to switch Google Cloud projects) */
+function clearGoogleDriveCredentials() {
+  localStorage.removeItem(GD_LS_CLIENT_ID);
+  localStorage.removeItem(GD_LS_API_KEY);
+  _gdInitialized  = false;
+  _gdTokenClient  = null;
+  _gdAccessToken  = null;
+  document.getElementById('gd-client-id-input').value = '';
+  document.getElementById('gd-api-key-input').value = '';
+  const status = document.getElementById('gd-status');
+  if (status) status.innerHTML = '';
+  hideModal('gd-credentials-modal');
+  toast('Google Drive Zugangsdaten entfernt', 'info');
+}
+
 function syncToDropbox() { toast('Dropbox Sync – Coming Soon', 'info'); }
 
 // ─── Share Target ─────────────────────────────────────────────────────────────
@@ -2211,6 +2279,7 @@ if ('serviceWorker' in navigator) {
 (async () => {
   applyTheme(State.theme);
   applySkin(State.skin);
+  applySalaryBlur(State.salaryBlur);
   if (localStorage.getItem('jt-sidebar-collapsed') === '1') {
     document.getElementById('app').classList.add('sidebar-collapsed');
   }

@@ -68,6 +68,10 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         Dark Mode
       </button>
+      <button id="salary-blur-btn" class="theme-toggle salary-blur-toggle" data-salary-blur-btn="text" onclick="toggleSalaryBlur()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Gehalt verbergen
+      </button>
       <div class="sidebar-footer">
         <span class="sidebar-version">Build 2026.08.19</span>
         <span class="sidebar-credit">Made with ❤️ in Bochum</span>
@@ -369,7 +373,12 @@
               <p>Backup im privaten <code style="font-size:.75rem;background:var(--bg-subtle);padding:1px 5px;border-radius:4px">appDataFolder</code> speichern – kein Zugriff auf dein restliches Drive.</p>
               <div id="gd-status" style="margin-top:5px"></div>
             </div>
-            <button id="gd-sync-btn" class="btn btn-ghost btn-sm" onclick="syncToGoogleDrive()">Sync</button>
+            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+              <button class="btn btn-icon btn-sm" onclick="openGoogleDriveCredentialsModal()" title="Zugangsdaten konfigurieren">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+              <button id="gd-sync-btn" class="btn btn-ghost btn-sm" onclick="syncToGoogleDrive()">Sync</button>
+            </div>
           </div>
         </div>
         <!-- Dropbox (still Coming Soon) -->
@@ -433,6 +442,12 @@
     <div class="bnav-dot"></div>
   </button>
 </nav>
+
+<!-- Mobile-only quick toggle to blur salary figures (desktop uses the sidebar button;
+     the bottom nav has no free slot, so this floats above it instead). -->
+<button id="salary-blur-fab" class="salary-blur-fab" data-salary-blur-btn="icon" onclick="toggleSalaryBlur()" title="Gehaltsangaben vor Blicken schützen">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+</button>
 
 <!-- FORM MODAL -->
 <div id="form-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeForm()">
@@ -588,7 +603,7 @@
         <div class="detail-grid">
           <div><div class="detail-item-label">Quelle</div><div class="detail-item-value" id="d-source">–</div></div>
           <div><div class="detail-item-label">Datum</div><div class="detail-item-value mono" id="d-date">–</div></div>
-          <div><div class="detail-item-label">Wunschgehalt</div><div class="detail-item-value mono" id="d-salary">–</div></div>
+          <div><div class="detail-item-label">Wunschgehalt</div><div class="detail-item-value mono jt-money" id="d-salary">–</div></div>
           <div><div class="detail-item-label">Absagegrund</div><div class="detail-item-value" id="d-rejection">–</div></div>
         </div>
       </div>
@@ -706,6 +721,40 @@
         <button type="submit" class="btn btn-primary">Speichern</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- GOOGLE DRIVE CREDENTIALS MODAL -->
+<div id="gd-credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)hideModal('gd-credentials-modal')">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <div>
+        <h2 style="font-size:1rem;margin-bottom:2px">Google Drive verbinden</h2>
+        <p style="font-size:.75rem;color:var(--text-muted)">Eigene Zugangsdaten aus der Google Cloud Console hinterlegen</p>
+      </div>
+      <button class="btn btn-icon" onclick="hideModal('gd-credentials-modal')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding-top:.75rem">
+      <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem;line-height:1.5">
+        Erstelle unter <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">console.cloud.google.com</a>
+        eine OAuth-Client-ID (Webanwendung) und einen API-Key. Die Werte bleiben ausschließlich lokal in diesem Browser gespeichert und werden nirgendwo hochgeladen.
+      </p>
+      <div class="form-group" style="margin-bottom:.75rem">
+        <label class="form-label" for="gd-client-id-input">OAuth Client ID</label>
+        <input id="gd-client-id-input" type="text" class="form-input" placeholder="123456789-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="gd-api-key-input">API Key</label>
+        <input id="gd-api-key-input" type="text" class="form-input" placeholder="AIzaSy…" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap;gap:.5rem">
+      <button class="btn btn-ghost" style="color:#ef4444" onclick="clearGoogleDriveCredentials()">Entfernen</button>
+      <button class="btn btn-ghost" style="margin-left:auto" onclick="hideModal('gd-credentials-modal')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="saveGoogleDriveCredentials()">Speichern &amp; verbinden</button>
+    </div>
   </div>
 </div>
 
