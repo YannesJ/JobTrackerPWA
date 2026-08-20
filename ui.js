@@ -443,8 +443,7 @@ function renderTable() {
                 ${(a.source && cols.source) ? `<span class="app-card-chip">${escHtml(a.source)}</span>` : ''}
                 ${cols.applicationDate ? `<span class="app-card-chip app-card-chip--mono">${dateStr}</span>` : ''}
                 ${(a.expectedSalary && cols.expectedSalary) ? `<span class="app-card-chip app-card-chip--accent jt-money">${fmtEuroShort(a.expectedSalary)}</span>` : ''}
-                <!-- Nicht an cols.priority gekoppelt - dessen Tabellen-Default ist "aus". -->
-                ${starsHTML(a.priority, 11)}
+                ${cols.priority ? starsHTML(a.priority, 11) : ''}
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">

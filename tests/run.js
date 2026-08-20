@@ -229,6 +229,14 @@ if (ctx) {
     }
   });
 
+  test('starsHTML with alwaysShow renders 3 outline stars even when unset (detail view)', () => {
+    for (const n of [0, null]) {
+      const html = ctx.starsHTML(n, 12, true);
+      assert.strictEqual((html.match(/<svg/g) || []).length, 3);
+      assert.strictEqual((html.match(/fill="#f59e0b"/g) || []).length, 0);
+    }
+  });
+
   // ─── Table columns: config, persistence, and CSS-rule parity ────────────────
   test('DEFAULT_TABLE_COLUMNS has exactly the keys TABLE_COLUMNS declares', () => {
     // Array.from (this process's, not the vm realm's) so deepStrictEqual isn't comparing

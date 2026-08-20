@@ -506,14 +506,16 @@ function fmtEuroShort(n) {
   return n + ' €';
 }
 const STAR_ICON_PATH = 'M12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
-/** 1-3 Sterne als Markup, gefüllt bis n. Leer/0/null -> ''. */
-function starsHTML(n, size = 12) {
+/** 1-3 Sterne als Markup, gefüllt bis n. Leer/0/null -> '', außer alwaysShow ist
+    gesetzt (Detailansicht: Priorität dort immer als setzbare Bewertung erkennbar,
+    auch unbefüllt - Tabelle/Kanban sollen dagegen nur befüllte Werte zeigen). */
+function starsHTML(n, size = 12, alwaysShow = false) {
   n = Number(n) || 0;
-  if (!n) return '';
+  if (!n && !alwaysShow) return '';
   let out = '';
   for (let i = 1; i <= 3; i++) {
     const on = i <= n;
-    out += `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${on ? '#f59e0b' : 'none'}" stroke="${on ? '#f59e0b' : 'var(--text-muted)'}" stroke-width="2"><polygon points="${STAR_ICON_PATH}"/></svg>`;
+    out += `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${on ? '#f59e0b' : 'none'}" stroke="${on ? '#f59e0b' : 'var(--text-muted)'}" stroke-width="2"><path d="${STAR_ICON_PATH}Z"/></svg>`;
   }
   return `<span class="priority-stars" title="Priorität: ${n}/3">${out}</span>`;
 }
@@ -1211,7 +1213,7 @@ function openDetail(id) {
   badge.textContent = a.status;
   badge.className   = `badge ${statusClass(a.status)}`;
   const starsEl = document.getElementById('d-priority-stars');
-  if (starsEl) starsEl.innerHTML = starsHTML(a.priority, 13);
+  if (starsEl) starsEl.innerHTML = starsHTML(a.priority, 13, true);
 
   // Reminder - settings-based threshold per status
   const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
