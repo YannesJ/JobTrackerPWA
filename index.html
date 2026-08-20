@@ -193,6 +193,14 @@
       </div>
       <div id="view-table">
         <!-- Desktop table (hidden on mobile via CSS) -->
+        <div class="table-toolbar">
+          <div style="position:relative;margin-left:auto" data-status-anchor>
+            <button class="btn btn-ghost btn-sm" onclick="toggleColumnsMenu(event)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="10" y="3" width="4" height="18" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
+              Spalten
+            </button>
+          </div>
+        </div>
         <div class="table-wrap">
           <div class="table-scroll">
             <table>
@@ -201,9 +209,11 @@
                   <th class="sortable" data-col="company" onclick="toggleSort('company')">Firma<span class="sort-arrow"></span></th>
                   <th class="sortable" data-col="position" onclick="toggleSort('position')">Position<span class="sort-arrow"></span></th>
                   <th class="sortable" data-col="status" onclick="toggleSort('status')">Status<span class="sort-arrow"></span></th>
-                  <th class="hide-md">Quelle</th>
+                  <th class="hide-md" data-col="source">Quelle</th>
                   <th class="sortable hide-md" data-col="applicationDate" onclick="toggleSort('applicationDate')">Datum<span class="sort-arrow"></span></th>
                   <th class="sortable hide-md" data-col="expectedSalary" onclick="toggleSort('expectedSalary')">Gehalt<span class="sort-arrow"></span></th>
+                  <th class="hide-md" data-col="notes">Notizen</th>
+                  <th class="hide-md" data-col="nextEvent">Nächster Termin</th>
                   <th></th>
                 </tr>
               </thead>

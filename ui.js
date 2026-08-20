@@ -431,13 +431,15 @@ function renderTable() {
     const lastTs = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
     const threshold_d = State.settings?.staleThreshold?.[a.status] ?? (a.status === 'Offen' ? 14 : 0);
     const stale  = threshold_d > 0 && daysSince(lastTs) > threshold_d;
+    const nextEv = nextEventForApp(a.id);
+    const nextEvLabel = nextEv ? `${fmtDateShort(nextEv.date)}${nextEv.time ? ` · ${escHtml(nextEv.time)}` : ''}` : '-';
     return `<tr onclick="openDetail('${a.id}')">
-      <td class="td-primary">
+      <td class="td-primary" data-col="company">
         ${stale ? '<span class="kanban-stale-dot" title="Offen seit &gt;14 Tagen"></span>' : ''}
         ${escHtml(a.company)}
       </td>
-      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
-      <td>
+      <td data-col="position" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
+      <td data-col="status">
         <div style="position:relative;display:inline-flex;" data-status-anchor>
           <button class="status-pill" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
             <span class="badge ${statusClass(a.status)}" style="pointer-events:none">${escHtml(a.status)}</span>
@@ -445,9 +447,11 @@ function renderTable() {
           </button>
         </div>
       </td>
-      <td class="hide-md td-mono" style="font-size:0.78rem">${escHtml(a.source||'-')}</td>
-      <td class="hide-md td-mono" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
-      <td class="hide-md td-mono jt-money" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
+      <td class="hide-md td-mono" data-col="source" style="font-size:0.78rem">${escHtml(a.source||'-')}</td>
+      <td class="hide-md td-mono" data-col="applicationDate" style="font-size:0.78rem">${fmtDateTime(a.applicationDate)}</td>
+      <td class="hide-md td-mono jt-money" data-col="expectedSalary" style="font-size:0.78rem">${fmtEuro(a.expectedSalary)}</td>
+      <td class="hide-md" data-col="notes" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.78rem;color:var(--text-muted)" title="${escAttr(a.notes||'')}">${escHtml(a.notes||'-')}</td>
+      <td class="hide-md td-mono" data-col="nextEvent" style="font-size:0.78rem" title="${escAttr(nextEv?.title||'')}">${nextEvLabel}</td>
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
           <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
@@ -458,6 +462,7 @@ function renderTable() {
   }).join('');
   lucide.createIcons();
   updateSortHeaders();
+  applyTableColumnVisibility();
 }
 
 // ─── Kanban ───────────────────────────────────────────────────────────────────

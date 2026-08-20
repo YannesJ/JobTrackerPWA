@@ -69,6 +69,48 @@ function statusSlot(name) {
   return idx >= 0 ? idx : 0;
 }
 
+// ─── Tabellenspalten (Bewerbungen-Ansicht) ─────────────────────────────────────
+// Muss vor `State` stehen, da State.tableColumns beim Erstellen bereits
+// loadTableColumns() aufruft. Firma und die Aktionen-Spalte bleiben fest sichtbar;
+// alles hier ist per Klick auf den "Spalten"-Button ein-/ausblendbar. Notizen ist
+// neu und startet standardmäßig aus, damit sich die Tabelle für Bestandsnutzer
+// nicht plötzlich anders anfühlt.
+const TABLE_COLUMNS = [
+  { key: 'position',        label: 'Position' },
+  { key: 'status',          label: 'Status' },
+  { key: 'source',          label: 'Quelle' },
+  { key: 'applicationDate', label: 'Datum' },
+  { key: 'expectedSalary',  label: 'Gehalt' },
+  { key: 'notes',           label: 'Notizen' },
+  { key: 'nextEvent',       label: 'Nächster Termin' },
+];
+const DEFAULT_TABLE_COLUMNS = {
+  position: true, status: true, source: true, applicationDate: true,
+  expectedSalary: true, notes: false, nextEvent: false,
+};
+function loadTableColumns() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-table-columns') || 'null');
+    if (stored && typeof stored === 'object') return { ...DEFAULT_TABLE_COLUMNS, ...stored };
+  } catch { /* ignore malformed data */ }
+  return { ...DEFAULT_TABLE_COLUMNS };
+}
+function saveTableColumns() {
+  localStorage.setItem('jt-table-columns', JSON.stringify(State.tableColumns));
+}
+function toggleTableColumn(key) {
+  State.tableColumns[key] = !State.tableColumns[key];
+  saveTableColumns();
+  applyTableColumnVisibility();
+}
+// Setzt die versteckten Spalten als ein Attribut auf .table-wrap statt pro Zelle
+// einzeln zu toggeln - eine CSS-Regel pro Spalte (siehe app.css) reicht damit aus.
+function applyTableColumnVisibility() {
+  const wrap = document.querySelector('.table-wrap');
+  if (!wrap) return;
+  wrap.dataset.hideCols = TABLE_COLUMNS.filter(c => !State.tableColumns[c.key]).map(c => c.key).join(' ');
+}
+
 // ── Farbableitung: aus einer einzelnen Hex-Farbe werden Badge/Akzent-Farben
 //    für Hell- und Dunkel-Theme berechnet (analog zu den bisherigen fixen Paletten) ──
 function _hexToRgb(hex) {
@@ -179,6 +221,8 @@ const State = {
   settings: loadSettings(),
   // Individuell konfigurierbare Status-Kategorien
   statuses: loadStatuses(),
+  // Welche optionalen Tabellenspalten sichtbar sind
+  tableColumns: loadTableColumns(),
   // Kalender-Termine
   events: [],
   calendarMonth: (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })(),
@@ -491,6 +535,15 @@ async function saveEvent(ev) {
 async function deleteEventById(id) {
   await idbDel(id, EVENTS);
   await loadEvents();
+}
+
+/** Nächster anstehender Termin (heute oder später) zu einer Bewerbung, sonst null. */
+function nextEventForApp(appId) {
+  const todayStr = localDateStr(new Date());
+  const upcoming = State.events
+    .filter(e => e.appId === appId && e.date >= todayStr)
+    .sort((a, b) => `${a.date} ${a.time || '99:99'}`.localeCompare(`${b.date} ${b.time || '99:99'}`));
+  return upcoming[0] || null;
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -1284,6 +1337,57 @@ function toggleImportInfo(e) {
   const spaceBelow = window.innerHeight - rect.bottom;
   const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
   const left = Math.min(Math.max(rect.left, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
+}
+
+// ─── Tabellenspalten-Auswahl (Popover) ─────────────────────────────────────────
+function toggleColumnsMenu(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.columns-popover').forEach(p => p.remove());
+
+  const popover = document.createElement('div');
+  popover.className = 'columns-popover';
+  popover.innerHTML = `
+    <div class="columns-popover-title">Spalten anzeigen</div>
+    ${TABLE_COLUMNS.map(c => `
+      <label class="columns-popover-item">
+        <input type="checkbox" ${State.tableColumns[c.key] ? 'checked' : ''} onchange="toggleTableColumn('${c.key}')" />
+        ${escHtml(c.label)}
+      </label>
+    `).join('')}
+  `;
+
+  // Fixed-positioniert & an <body> gehängt (wie beim Import-Info-Popover), rechtsbündig
+  // zum Button, damit es bei einem rechts sitzenden Button nicht rechts abgeschnitten wird.
+  const btn  = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.right - popRect.width, margin), window.innerWidth - popRect.width - margin);
   popover.style.left       = `${left}px`;
   popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
   popover.style.visibility = '';

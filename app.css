@@ -778,6 +778,7 @@ html.blur-salary .jt-money {
 .chart-wrap { position: relative; height: 180px; }
 
 /* ─── Table ────────────────────────────────────────────────────────────────── */
+.table-toolbar { display: flex; margin-bottom: 0.625rem; }
 .table-wrap {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -786,6 +787,18 @@ html.blur-salary .jt-money {
   box-shadow: var(--shadow-sm);
 }
 .table-scroll { overflow-x: auto; }
+/* Ein-/ausblendbare Spalten (Spalten-Popover): applyTableColumnVisibility() in app.js
+   setzt data-hide-cols auf .table-wrap als leerzeichengetrennte Liste ausgeblendeter
+   Spalten-Keys - eine Regel pro Spalte trifft dann sowohl th als auch td. */
+.table-wrap[data-hide-cols~="position"]        [data-col="position"],
+.table-wrap[data-hide-cols~="status"]          [data-col="status"],
+.table-wrap[data-hide-cols~="source"]          [data-col="source"],
+.table-wrap[data-hide-cols~="applicationDate"] [data-col="applicationDate"],
+.table-wrap[data-hide-cols~="expectedSalary"]  [data-col="expectedSalary"],
+.table-wrap[data-hide-cols~="notes"]           [data-col="notes"],
+.table-wrap[data-hide-cols~="nextEvent"]       [data-col="nextEvent"] {
+  display: none;
+}
 table { width: 100%; border-collapse: collapse; }
 thead { background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
 th {
@@ -1258,6 +1271,31 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 }
 .import-info-popover p + p { margin-top: 0.5rem; }
 .import-info-popover strong { color: var(--text-primary); }
+
+.columns-popover {
+  width: 190px;
+  max-width: calc(100vw - 16px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 0.5rem;
+  z-index: 500;
+  animation: popoverIn 0.15s ease;
+}
+.columns-popover-title {
+  font-weight: 700; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted); padding: 0.25rem 0.5rem 0.4rem;
+}
+.columns-popover-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--r-md);
+  font-size: 0.82rem; color: var(--text-secondary);
+  cursor: pointer;
+}
+.columns-popover-item:hover { background: var(--bg-hover); }
+.columns-popover-item input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 .status-manage-list {
   display: flex; flex-direction: column; gap: 0.5rem;
   margin-bottom: 0.75rem;
