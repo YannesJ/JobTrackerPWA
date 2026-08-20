@@ -555,7 +555,7 @@ function navigate(tab) {
   if (tab === 'dashboard')    renderDashboard();
   if (tab === 'applications') renderView();
   if (tab === 'calendar')     renderCalendar();
-  if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); }
+  if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); checkBackupReminder(); }
   if (tab === 'jobsearch')   _jsRestorePortalSelection();
   lucide.createIcons();
 }
@@ -770,6 +770,9 @@ async function _applyDrop(id, newStatus) {
 function openForm(id) {
   const app = id ? State.all.find(a => a.id === id) : null;
   document.getElementById('form-title').textContent = app ? 'Bearbeiten' : 'Neue Bewerbung';
+  // Reset here (not just after submit) so an abandoned duplicateApp() attempt can't
+  // leak into a later, unrelated "+ Neu" form and suppress its duplicate warning.
+  delete document.getElementById('app-form').dataset.skipDupeWarning;
   document.getElementById('f-id').value        = app?.id || '';
   document.getElementById('f-company').value   = app?.company || '';
   document.getElementById('f-position').value  = app?.position || '';
@@ -795,6 +798,27 @@ function openForm(id) {
 
 function closeForm() { hideModal('form-modal'); }
 
+/** Öffnet das leere Formular vorausgefüllt als Kopie einer bestehenden Bewerbung -
+ *  praktisch für Serienbewerbungen bei ähnlichen Rollen/Portalen. Speichert als neuer
+ *  Eintrag (f-id bleibt leer), Status/Datum starten frisch statt den alten Stand zu übernehmen. */
+function duplicateApp(id) {
+  const app = State.all.find(a => a.id === id);
+  if (!app) return;
+  openForm();
+  document.getElementById('form-title').textContent = 'Bewerbung duplizieren';
+  document.getElementById('f-company').value       = app.company || '';
+  document.getElementById('f-position').value      = app.position || '';
+  document.getElementById('f-source').value        = app.source || '';
+  document.getElementById('f-salary').value        = app.expectedSalary || '';
+  document.getElementById('f-platform').value      = app.platformLink || '';
+  document.getElementById('f-docs').value          = app.documentLink || '';
+  document.getElementById('f-contact-name').value  = app.contactName || '';
+  document.getElementById('f-contact-phone').value = app.contactPhone || '';
+  document.getElementById('f-contact-email').value = app.contactEmail || '';
+  document.getElementById('app-form').dataset.skipDupeWarning = '1';
+  toast('Als Vorlage übernommen - Datum und Status bitte prüfen', 'info');
+}
+
 function toggleRejectionField() {
   const show = document.getElementById('f-status').value === 'Absage';
   document.getElementById('f-rejection-group').classList.toggle('hidden', !show);
@@ -808,8 +832,14 @@ async function submitForm(e) {
   const company   = document.getElementById('f-company').value.trim();
   const position  = document.getElementById('f-position').value.trim();
 
-  // Duplicate check: same company + position already exists (different id)
-  if (!existing) {
+  // Duplicate check: same company + position already exists (different id).
+  // Skipped once right after duplicateApp() - the user just explicitly chose to
+  // create a same-company/position copy, so re-warning them about that exact thing
+  // would just be a confusing echo of the button they clicked.
+  const form = document.getElementById('app-form');
+  const skipDupeWarning = form.dataset.skipDupeWarning === '1';
+  delete form.dataset.skipDupeWarning;
+  if (!existing && !skipDupeWarning) {
     const dupe = State.all.find(a =>
       a.company.toLowerCase() === company.toLowerCase() &&
       a.position.toLowerCase() === position.toLowerCase()
@@ -973,8 +1003,9 @@ function openDetail(id) {
   }
 
   // Action buttons
-  document.getElementById('d-edit-btn').onclick   = () => { closeDetail(); openForm(id); };
-  document.getElementById('d-delete-btn').onclick = () => { closeDetail(); confirmDelete(id); };
+  document.getElementById('d-edit-btn').onclick      = () => { closeDetail(); openForm(id); };
+  document.getElementById('d-duplicate-btn').onclick = () => { closeDetail(); duplicateApp(id); };
+  document.getElementById('d-delete-btn').onclick    = () => { closeDetail(); confirmDelete(id); };
   showModal('detail-modal');
   lucide.createIcons();
 }
@@ -1185,15 +1216,52 @@ async function requestPersistence() {
   toast(granted ? 'Speicherschutz aktiviert ✓' : 'Nicht gewährt (Browsereinstellung)', granted ? 'success' : 'warning');
 }
 
+// ─── Backup-Erinnerung ──────────────────────────────────────────────────────────
+// Alle Daten liegen nur lokal (siehe Info-Seite) - ohne eigenes Zutun gibt es kein
+// Netz. Nach BACKUP_REMINDER_DAYS Tagen ohne Export/Google-Drive-Sync erscheint ein
+// dezenter Hinweis in der Sidebar, der zu Einstellungen → Offline-Backup verlinkt.
+const BACKUP_REMINDER_DAYS = 30;
+
+function markBackupDone() {
+  localStorage.setItem('jt-last-backup', nowISO());
+  checkBackupReminder();
+}
+
+function checkBackupReminder() {
+  let last = localStorage.getItem('jt-last-backup');
+  if (!last) {
+    // Noch nie ein Backup gemacht: Zähler ab jetzt starten statt sofort zu warnen -
+    // sonst würde ein brandneuer Nutzer schon beim ersten Laden angemeckert.
+    last = nowISO();
+    localStorage.setItem('jt-last-backup', last);
+  }
+  const days    = daysSince(last);
+  const overdue = State.all.length > 0 && days > BACKUP_REMINDER_DAYS;
+
+  const warnEl = document.getElementById('backup-warn');
+  if (warnEl) warnEl.classList.toggle('hidden', !overdue);
+
+  const statusEl = document.getElementById('backup-status-text');
+  if (statusEl) {
+    statusEl.textContent = days === 0 ? 'Letztes Backup: heute'
+      : days === 1 ? 'Letztes Backup: gestern'
+      : `Letztes Backup: vor ${days} Tagen`;
+  }
+  const dotEl = document.getElementById('backup-status-dot');
+  if (dotEl) dotEl.className = `persist-dot ${overdue ? 'warn' : 'ok'}`;
+}
+
 async function exportData() {
   const pairs = await idbEntries(DB);
   const data  = pairs.map(([,v]) => v);
+  if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
   const blob  = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
   a.href = url;
   a.download = `jobtracker-${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(url);
+  markBackupDone();
   toast(`${data.length} Einträge exportiert`, 'success');
 }
 
@@ -1217,6 +1285,7 @@ async function exportCSV() {
   const el   = document.createElement('a');
   el.href = url; el.download = `jobtracker-${new Date().toISOString().slice(0,10)}.csv`;
   el.click(); URL.revokeObjectURL(url);
+  markBackupDone();
   toast(`${data.length} Einträge als CSV exportiert`, 'success');
 }
 
@@ -2031,6 +2100,7 @@ async function syncToGoogleDrive() {
     await _gdEnsureLibs();
     await _gdEnsureToken();
     await _gdRunSync();
+    markBackupDone();
   } catch (err) {
     if (err?.message === 'CANCELLED') {
       toast('Google Drive: Anmeldung abgebrochen.', 'info');
@@ -2590,6 +2660,7 @@ if ('serviceWorker' in navigator) {
   }
   navigate('dashboard');
   await checkPersistence();
+  checkBackupReminder();
   handleShareTarget();
   renderSettingsNotifications();
   renderStatusSettings();
