@@ -438,6 +438,7 @@ function navigate(tab) {
   if (tab === 'applications') renderView();
   if (tab === 'calendar')     renderCalendar();
   if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); }
+  if (tab === 'jobsearch')   _jsRestorePortalSelection();
   lucide.createIcons();
 }
 
@@ -880,12 +881,27 @@ function searchSalary(position, source) {
 }
 
 // ─── Job finden: mehrere Jobportale gleichzeitig durchsuchen ───────────────────
+// Google-Suche mit site:-Filter, für Portale ohne dokumentiertes/verlässliches
+// eigenes Such-URL-Schema (z.B. reine Matching-Apps ohne klassische Trefferliste).
+function _siteSearch(domain, q, l) {
+  return `https://www.google.com/search?q=${encodeURIComponent(`site:${domain} ${q}${l ? ' ' + l : ''}`)}`;
+}
+
 const JOB_PORTALS = {
-  linkedin:       (q, l) => `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
   indeed:         (q, l) => `https://de.indeed.com/jobs?q=${encodeURIComponent(q)}${l ? `&l=${encodeURIComponent(l)}` : ''}`,
   stepstone:      (q, l) => `https://www.stepstone.de/jobs/${encodeURIComponent(q)}${l ? `/in-${encodeURIComponent(l)}` : ''}`,
-  xing:           (q, l) => `https://www.xing.com/jobs/search?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
+  linkedin:       (q, l) => `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
   arbeitsagentur: (q, l) => `https://www.arbeitsagentur.de/jobsuche/suche?was=${encodeURIComponent(q)}${l ? `&wo=${encodeURIComponent(l)}` : ''}`,
+  xing:           (q, l) => `https://www.xing.com/jobs/search?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
+  instaffo:       (q, l) => _siteSearch('instaffo.com', q, l),
+  truffls:        (q, l) => _siteSearch('truffls.com', q, l),
+  workwise:       (q, l) => _siteSearch('workwise.io', q, l),
+  ruhr24jobs:     (q, l) => _siteSearch('jobs.ruhr24.de', q, l),
+  interamt:       (q, l) => _siteSearch('interamt.de', q, l),
+  getinit:        (q, l) => _siteSearch('get-in-it.de', q, l),
+  karrierebund:   (q, l) => _siteSearch('karriere.bund.de', q, l),
+  zuhausejobs:    (q, l) => _siteSearch('zuhausejobs.com', q, l),
+  euremotejobs:   (q, l) => _siteSearch('euremotejobs.com', q, l),
   google:         (q, l) => `https://www.google.com/search?q=${encodeURIComponent(`${q}${l ? ' ' + l : ''} Stellenangebote`)}`,
 };
 
@@ -896,18 +912,34 @@ function _jsReadQuery() {
   return { query, location };
 }
 
-function openJobSearch(portal) {
-  const { query, location } = _jsReadQuery();
-  if (!query) return;
-  window.open(JOB_PORTALS[portal](query, location), '_blank', 'noopener,noreferrer');
+function _jsSelectedPortals() {
+  return Array.from(document.querySelectorAll('.jobportal-check:checked')).map(el => el.value);
 }
 
-function openAllJobSearches() {
+function _jsSaveSelectedPortals() {
+  localStorage.setItem('jt-job-portals', JSON.stringify(_jsSelectedPortals()));
+}
+
+/** Restore checked state from localStorage (default: all checked) — called when the page opens */
+function _jsRestorePortalSelection() {
+  const saved = JSON.parse(localStorage.getItem('jt-job-portals') || 'null');
+  if (!Array.isArray(saved)) return;
+  document.querySelectorAll('.jobportal-check').forEach(el => { el.checked = saved.includes(el.value); });
+}
+
+function toggleAllJobPortals() {
+  const boxes = document.querySelectorAll('.jobportal-check');
+  const allChecked = Array.from(boxes).every(el => el.checked);
+  boxes.forEach(el => { el.checked = !allChecked; });
+  _jsSaveSelectedPortals();
+}
+
+function openSelectedJobSearches() {
   const { query, location } = _jsReadQuery();
   if (!query) return;
-  Object.keys(JOB_PORTALS).forEach(portal => {
-    window.open(JOB_PORTALS[portal](query, location), '_blank', 'noopener,noreferrer');
-  });
+  const selected = _jsSelectedPortals();
+  if (!selected.length) { toast('Bitte mindestens ein Portal auswählen.', 'warning'); return; }
+  selected.forEach(portal => window.open(JOB_PORTALS[portal](query, location), '_blank', 'noopener,noreferrer'));
 }
 
 async function confirmDelete(id) {

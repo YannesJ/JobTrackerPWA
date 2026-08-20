@@ -255,33 +255,48 @@
           <div class="form-group">
             <label class="form-label" for="js-query">Jobtitel / Suchbegriff *</label>
             <input id="js-query" type="text" class="form-input" placeholder="z.B. Frontend Entwickler"
-              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openAllJobSearches()" />
+              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openSelectedJobSearches()" />
           </div>
           <div class="form-group">
             <label class="form-label" for="js-location">Ort <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
             <input id="js-location" type="text" class="form-input" placeholder="z.B. Berlin oder Remote"
-              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openAllJobSearches()" />
+              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openSelectedJobSearches()" />
           </div>
         </div>
-        <button class="btn btn-primary" style="width:100%;margin-top:0.875rem" onclick="openAllJobSearches()">
+        <button class="btn btn-primary" style="width:100%;margin-top:0.875rem" onclick="openSelectedJobSearches()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Auf allen Portalen öffnen
+          Ausgewählte Portale öffnen
         </button>
         <p style="font-size:.72rem;color:var(--text-muted);margin-top:.625rem;line-height:1.5">
-          Öffnet jedes Portal mit deiner Suche in einem neuen Tab. Falls dein Browser Pop-ups blockiert, erlaube sie einmalig für diese Seite.
+          Öffnet jedes ausgewählte Portal mit deiner Suche in einem neuen Tab. Falls dein Browser Pop-ups blockiert, erlaube sie einmalig für diese Seite.
         </p>
       </div>
 
       <div class="settings-section" style="margin-top:1.25rem;max-width:600px">
-        <div class="settings-section-title">Einzeln öffnen</div>
-        <div class="card card-sm" style="display:flex;flex-wrap:wrap;gap:0.5rem">
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('linkedin')">LinkedIn</button>
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('indeed')">Indeed</button>
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('stepstone')">StepStone</button>
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('xing')">Xing</button>
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('arbeitsagentur')">Arbeitsagentur</button>
-          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('google')">Google</button>
+        <div class="settings-section-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Portale</span>
+          <button class="btn btn-ghost btn-xs" style="text-transform:none;letter-spacing:0;font-weight:600" onclick="toggleAllJobPortals()">Alle / Keine</button>
         </div>
+        <div class="card card-sm jobportal-grid">
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="indeed" checked onchange="_jsSaveSelectedPortals()" /> Indeed</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="stepstone" checked onchange="_jsSaveSelectedPortals()" /> StepStone</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="linkedin" checked onchange="_jsSaveSelectedPortals()" /> LinkedIn</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="xing" checked onchange="_jsSaveSelectedPortals()" /> Xing</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="arbeitsagentur" checked onchange="_jsSaveSelectedPortals()" /> Arbeitsagentur</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="karrierebund" checked onchange="_jsSaveSelectedPortals()" /> Karriere.bund</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="interamt" checked onchange="_jsSaveSelectedPortals()" /> Interamt</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="getinit" checked onchange="_jsSaveSelectedPortals()" /> GetInIT</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="instaffo" checked onchange="_jsSaveSelectedPortals()" /> Instaffo</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="truffls" checked onchange="_jsSaveSelectedPortals()" /> Truffls</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="workwise" checked onchange="_jsSaveSelectedPortals()" /> Workwise</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="ruhr24jobs" checked onchange="_jsSaveSelectedPortals()" /> Ruhr24Jobs</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="zuhausejobs" checked onchange="_jsSaveSelectedPortals()" /> Zuhausejobs</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="euremotejobs" checked onchange="_jsSaveSelectedPortals()" /> EU Remote Jobs</label>
+          <label class="jobportal-item"><input type="checkbox" class="jobportal-check" value="google" checked onchange="_jsSaveSelectedPortals()" /> Google</label>
+        </div>
+        <p style="font-size:.72rem;color:var(--text-muted);margin-top:.5rem;line-height:1.5">
+          Für Instaffo, Truffls, Workwise, Ruhr24Jobs, Interamt, GetInIT, Karriere.bund, Zuhausejobs und EU Remote Jobs gibt es keine dokumentierte eigene Suchseite, daher läuft die Suche dort über eine auf das Portal eingegrenzte Google-Suche.
+        </p>
       </div>
     </div>
 
@@ -294,58 +309,72 @@
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="card card-sm">
-          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
-            JobTracker hilft dir, deine Bewerbungen im Blick zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Ganz ohne Account, ganz ohne Anmeldung.
-          </p>
+      <div class="info-block">
+        <div class="info-row">
+          <p class="info-row-text">JobTracker hilft dir, deine Bewerbungen im Blick zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Ganz ohne Account, ganz ohne Anmeldung.</p>
+        </div>
+        <div class="info-row">
+          <p class="info-row-text">Deine Daten werden nur auf diesem einen Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto dahinter – niemand außer dir sieht sie, nichts wird automatisch hochgeladen.</p>
+        </div>
+        <div class="info-row">
+          <p class="info-row-text">Der Nachteil: Handy und Laptop führen dadurch getrennte Listen. Ein Eintrag vom Handy taucht nicht von selbst auf dem Laptop auf – dafür gleichst du beide Geräte per Export/Import ab (siehe „Mehrere Geräte" unten).</p>
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-title">Warum sehe ich meine Bewerbungen nicht auf allen Geräten?</div>
-        <div class="card card-sm">
-          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
-            Deine Bewerbungen werden nur auf diesem einen Gerät gespeichert, direkt in diesem Browser. Es gibt keine Cloud und kein Konto dahinter – niemand außer dir kann diese Daten sehen, und es wird auch nichts automatisch irgendwohin hochgeladen.
-          </p>
-          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
-            Der Nachteil dabei: Handy und Laptop führen dadurch zwei getrennte Listen. Was du am Handy einträgst, taucht nicht von selbst auf dem Laptop auf.
-          </p>
-          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
-            So gleichst du zwei Geräte ab:
-          </p>
-          <ol style="font-size:.85rem;line-height:1.7;color:var(--text-secondary);margin:0 0 .625rem 1.2rem;padding:0">
-            <li>Auf dem einen Gerät: <strong>Einstellungen → Offline-Backup → JSON</strong> exportieren.</li>
-            <li>Die Datei aufs andere Gerät bringen (z.B. per Mail oder Cloud-Ordner) und dort über <strong>Einstellungen → Offline-Backup → Import JSON</strong> wieder einlesen.</li>
-          </ol>
-          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
-            Wer das nicht von Hand machen möchte: Unter <strong>Einstellungen → Cloud-Synchronisation</strong> lässt sich optional mit einem eigenen Google-Drive-Konto abgleichen – dafür trägst du dort einmalig eigene Zugangsdaten ein.
-          </p>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Funktionen kurz erklärt</div>
-        <div class="card card-sm">
-          <div style="margin-bottom:.75rem">
-            <h3 style="font-size:.85rem;margin-bottom:2px">Tabelle &amp; Kanban</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Bewerbungen als Liste oder als Karten-Board nach Status – umschaltbar auf der Seite „Bewerbungen".</p>
-          </div>
-          <div style="margin-bottom:.75rem">
-            <h3 style="font-size:.85rem;margin-bottom:2px">Eigene Status</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Eigene Status mit Farbe anlegen, umbenennen und sortieren, unter Einstellungen.</p>
-          </div>
-          <div style="margin-bottom:.75rem">
-            <h3 style="font-size:.85rem;margin-bottom:2px">Kalender &amp; Erinnerungen</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Termine anlegen und dich rechtzeitig daran erinnern lassen.</p>
-          </div>
-          <div style="margin-bottom:.75rem">
-            <h3 style="font-size:.85rem;margin-bottom:2px">Gehalt verbergen</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Blendet alle Gehaltsangaben per Klick aus – praktisch, wenn du die Liste mal jemandem zeigen möchtest. Auge-Icon in der Sidebar (Desktop) bzw. unten rechts (Mobile).</p>
+      <div class="settings-section-title">Bedienung</div>
+      <div class="info-block">
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="16" rx="1"/></svg>
           </div>
           <div>
-            <h3 style="font-size:.85rem;margin-bottom:2px">Dauerhafter Speicher</h3>
-            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Damit der Browser deine Daten nicht irgendwann von selbst aufräumt, kannst du das unter Einstellungen fest einschalten.</p>
+            <div class="info-row-title">Tabelle &amp; Kanban</div>
+            <div class="info-row-desc">Liste oder Karten-Board – umschaltbar auf der Seite „Bewerbungen".</div>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
+          <div>
+            <div class="info-row-title">Eigene Status</div>
+            <div class="info-row-desc">Status mit eigener Farbe anlegen, umbenennen, sortieren.</div>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div>
+            <div class="info-row-title">Kalender &amp; Erinnerungen</div>
+            <div class="info-row-desc">Termine anlegen und dich rechtzeitig erinnern lassen.</div>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <div>
+            <div class="info-row-title">Gehalt verbergen</div>
+            <div class="info-row-desc">Blendet Gehaltsangaben aus – praktisch zum Zeigen an andere.</div>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <div class="info-row-title">Dauerhafter Speicher</div>
+            <div class="info-row-desc">Verhindert, dass der Browser deine Daten von selbst löscht.</div>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="info-row-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div>
+            <div class="info-row-title">Mehrere Geräte</div>
+            <div class="info-row-desc">Abgleich nur per Export/Import (Einstellungen → Offline-Backup) oder optionalem Google-Drive-Sync.</div>
           </div>
         </div>
       </div>
