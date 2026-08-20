@@ -54,6 +54,14 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Kalender
       </button>
+      <button class="nav-item" data-nav="jobsearch" onclick="navigate('jobsearch')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Job finden
+      </button>
+      <button class="nav-item" data-nav="info" onclick="navigate('info')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        Info
+      </button>
       <button class="nav-item" data-nav="settings" onclick="navigate('settings')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Einstellungen
@@ -233,12 +241,130 @@
       </div>
     </div>
 
+    <!-- JOB FINDEN -->
+    <div id="page-jobsearch" class="page">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Job finden</h1>
+          <p class="page-header-subtitle">Auf mehreren Jobportalen gleichzeitig suchen</p>
+        </div>
+      </div>
+
+      <div class="card card-sm" style="max-width:600px">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label" for="js-query">Jobtitel / Suchbegriff *</label>
+            <input id="js-query" type="text" class="form-input" placeholder="z.B. Frontend Entwickler"
+              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openAllJobSearches()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="js-location">Ort <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+            <input id="js-location" type="text" class="form-input" placeholder="z.B. Berlin oder Remote"
+              inputmode="text" autocomplete="off" enterkeyhint="search" onkeydown="if(event.key==='Enter')openAllJobSearches()" />
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:0.875rem" onclick="openAllJobSearches()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Auf allen Portalen öffnen
+        </button>
+        <p style="font-size:.72rem;color:var(--text-muted);margin-top:.625rem;line-height:1.5">
+          Öffnet jedes Portal mit deiner Suche in einem neuen Tab. Falls dein Browser Pop-ups blockiert, erlaube sie einmalig für diese Seite.
+        </p>
+      </div>
+
+      <div class="settings-section" style="margin-top:1.25rem;max-width:600px">
+        <div class="settings-section-title">Einzeln öffnen</div>
+        <div class="card card-sm" style="display:flex;flex-wrap:wrap;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('linkedin')">LinkedIn</button>
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('indeed')">Indeed</button>
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('stepstone')">StepStone</button>
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('xing')">Xing</button>
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('arbeitsagentur')">Arbeitsagentur</button>
+          <button class="btn btn-ghost btn-sm" onclick="openJobSearch('google')">Google</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div id="page-info" class="page">
+      <div class="page-header">
+        <div class="page-header-left">
+          <h1>Info</h1>
+          <p class="page-header-subtitle">Was JobTracker macht und wie deine Daten behandelt werden</p>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Über JobTracker</div>
+        <div class="card card-sm">
+          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
+            JobTracker hilft dir, den Überblick über deine Bewerbungen zu behalten – von der ersten Bewerbung bis zur Zu- oder Absage. Alles läuft direkt im Browser als installierbare PWA, ganz ohne eigenen Server oder Account.
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Datenspeicherung &amp; Datenschutz</div>
+        <div class="card card-sm">
+          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
+            Bewerbungen, Erinnerungen und Termine werden ausschließlich lokal in deinem Browser gespeichert (IndexedDB) – nichts wird automatisch irgendwohin übertragen.
+          </p>
+          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary);margin-bottom:.625rem">
+            Unter <strong>Einstellungen → Dauerhafter Speicher</strong> verhinderst du, dass der Browser diese Daten bei Speicherplatzmangel automatisch löscht.
+          </p>
+          <p style="font-size:.85rem;line-height:1.6;color:var(--text-secondary)">
+            Über <strong>Einstellungen → Offline-Backup</strong> exportierst und importierst du alle Daten als JSON oder CSV/Excel. Die optionale Google-Drive-Synchronisation legt ein Backup ausschließlich im privaten <code style="font-size:.78rem;background:var(--bg-subtle);padding:1px 5px;border-radius:4px">appDataFolder</code> deines eigenen Google-Kontos ab – dafür trägst du unter <strong>Einstellungen → Cloud-Synchronisation</strong> deine eigenen Zugangsdaten ein.
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Funktionen im Überblick</div>
+        <div class="card card-sm">
+          <div style="margin-bottom:.875rem">
+            <h3 style="font-size:.85rem;margin-bottom:2px">Tabelle &amp; Kanban</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Bewerbungen als sortierbare Tabelle oder als Kanban-Board nach Status – umschaltbar über die Ansicht-Buttons auf der Seite „Bewerbungen".</p>
+          </div>
+          <div style="margin-bottom:.875rem">
+            <h3 style="font-size:.85rem;margin-bottom:2px">Eigene Status-Kategorien</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Status mit eigener Farbe anlegen, umbenennen und sortieren – unter Einstellungen → Status-Kategorien.</p>
+          </div>
+          <div style="margin-bottom:.875rem">
+            <h3 style="font-size:.85rem;margin-bottom:2px">Kalender &amp; Erinnerungen</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Termine zu Bewerbungen anlegen und dich per Push-Benachrichtigung erinnern lassen (Benachrichtigungen bleiben standardmäßig aus).</p>
+          </div>
+          <div>
+            <h3 style="font-size:.85rem;margin-bottom:2px">Gehalts-Sichtschutz</h3>
+            <p style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Blendet alle Gehaltsangaben per Klick aus – praktisch, wenn du die Liste mal jemandem zeigen möchtest. Auge-Icon in der Sidebar (Desktop) bzw. unten rechts (Mobile).</p>
+          </div>
+        </div>
+      </div>
+
+      <p style="font-size:0.72rem;text-align:center;color:var(--text-muted);margin-top:1.5rem">JobTracker · Apache 2.0 · Alle Daten lokal auf deinem Gerät</p>
+    </div>
+
     <!-- SETTINGS -->
     <div id="page-settings" class="page" style="max-width:600px">
       <div class="page-header">
         <div class="page-header-left">
           <h1>Einstellungen</h1>
           <p class="page-header-subtitle">Datenverwaltung &amp; Synchronisation</p>
+        </div>
+      </div>
+
+      <!-- Nur auf Mobile: Desktop erreicht Info/Job finden direkt über die Sidebar,
+           unten in der Bottom-Nav ist mit 4 Punkten kein Platz mehr frei. -->
+      <div class="settings-section settings-mobile-nav">
+        <div class="settings-section-title">Mehr</div>
+        <div class="card card-sm" style="display:flex;flex-wrap:wrap;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="navigate('jobsearch')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Job finden
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('info')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Info
+          </button>
         </div>
       </div>
 

@@ -879,6 +879,37 @@ function searchSalary(position, source) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+// ─── Job finden: mehrere Jobportale gleichzeitig durchsuchen ───────────────────
+const JOB_PORTALS = {
+  linkedin:       (q, l) => `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
+  indeed:         (q, l) => `https://de.indeed.com/jobs?q=${encodeURIComponent(q)}${l ? `&l=${encodeURIComponent(l)}` : ''}`,
+  stepstone:      (q, l) => `https://www.stepstone.de/jobs/${encodeURIComponent(q)}${l ? `/in-${encodeURIComponent(l)}` : ''}`,
+  xing:           (q, l) => `https://www.xing.com/jobs/search?keywords=${encodeURIComponent(q)}${l ? `&location=${encodeURIComponent(l)}` : ''}`,
+  arbeitsagentur: (q, l) => `https://www.arbeitsagentur.de/jobsuche/suche?was=${encodeURIComponent(q)}${l ? `&wo=${encodeURIComponent(l)}` : ''}`,
+  google:         (q, l) => `https://www.google.com/search?q=${encodeURIComponent(`${q}${l ? ' ' + l : ''} Stellenangebote`)}`,
+};
+
+function _jsReadQuery() {
+  const query    = document.getElementById('js-query')?.value.trim() || '';
+  const location = document.getElementById('js-location')?.value.trim() || '';
+  if (!query) toast('Bitte einen Jobtitel oder Suchbegriff eingeben.', 'warning');
+  return { query, location };
+}
+
+function openJobSearch(portal) {
+  const { query, location } = _jsReadQuery();
+  if (!query) return;
+  window.open(JOB_PORTALS[portal](query, location), '_blank', 'noopener,noreferrer');
+}
+
+function openAllJobSearches() {
+  const { query, location } = _jsReadQuery();
+  if (!query) return;
+  Object.keys(JOB_PORTALS).forEach(portal => {
+    window.open(JOB_PORTALS[portal](query, location), '_blank', 'noopener,noreferrer');
+  });
+}
+
 async function confirmDelete(id) {
   const a = State.all.find(x => x.id === id);
   if (!a) return;

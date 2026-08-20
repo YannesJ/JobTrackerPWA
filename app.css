@@ -364,10 +364,15 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   transition: background var(--t-base), border-color var(--t-base);
 }
 
+/* Info/Job finden live only in the sidebar nav (desktop); surface them inside
+   Settings as a fallback entry point where the sidebar is hidden (mobile). */
+.settings-mobile-nav { display: none; }
+
 @media (max-width: 768px) {
   #sidebar    { display: none !important; }
   #bottom-nav { display: flex !important; }
   #main { margin-left: 0; padding-bottom: 68px; }
+  .settings-mobile-nav { display: block; }
 }
 
 /* Mobile salary-blur FAB: floats above the bottom nav; desktop uses the sidebar
