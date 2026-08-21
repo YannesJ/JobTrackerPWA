@@ -61,12 +61,22 @@ const DEFAULT_STATUSES = [
 function _inferStatusKind(name) {
   return DEFAULT_STATUSES.find(s => s.name === name)?.kind || 'other';
 }
+// Normalisiert einen (z.B. aus localStorage oder einem JSON-/CSV-Import stammenden)
+// Statuskatalog auf ein sicheres Format: gültiger Name, gültige Hex-Farbe, gültiges
+// Zähl-Kind - jeweils mit Fallback statt fehlerhafte/fehlende Werte durchzureichen.
+function sanitizeStatuses(list) {
+  return list
+    .filter(s => s && typeof s.name === 'string' && s.name.trim())
+    .map(s => ({
+      name:  s.name.trim(),
+      color: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : (DEFAULT_STATUSES.find(d => d.name === s.name)?.color || '#8888a8'),
+      kind:  STATUS_KINDS.some(k => k.key === s.kind) ? s.kind : _inferStatusKind(s.name),
+    }));
+}
 function loadStatuses() {
   try {
     const stored = JSON.parse(localStorage.getItem('jt-statuses') || 'null');
-    if (Array.isArray(stored) && stored.length) {
-      return stored.map(s => ({ ...s, kind: STATUS_KINDS.some(k => k.key === s.kind) ? s.kind : _inferStatusKind(s.name) }));
-    }
+    if (Array.isArray(stored) && stored.length) return sanitizeStatuses(stored);
   } catch { /* ignore malformed data */ }
   return DEFAULT_STATUSES.map(s => ({ ...s }));
 }
@@ -1557,7 +1567,11 @@ async function exportData() {
   const pairs = await idbEntries(DB);
   const data  = pairs.map(([,v]) => v);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
-  const blob  = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  // Statuskategorien (Name, Farbe, Zähl-Kind) gehören mit in den Export, sonst
+  // sehen die importierten Einträge auf einem anderen Gerät mit abweichender
+  // Statuskonfiguration (z.B. andere Farben) anders aus als auf dem Ursprungsgerät.
+  const payload = { applications: data, statuses: State.statuses };
+  const blob  = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
   a.href = url;
@@ -1572,10 +1586,14 @@ async function exportCSV() {
   const data  = pairs.map(([,v]) => v);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
 
-  const cols = ['Firma','Position','Status','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+  // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
+  // da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
+  // Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
+  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = data.map(a => [
-    esc(a.company), esc(a.position), esc(a.status), esc(a.source),
+    esc(a.company), esc(a.position), esc(a.status), esc(getStatusColor(a.status)),
+    esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''), esc(a.source),
     esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
     esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
     esc(a.platformLink), esc(a.documentLink), esc(a.notes),
@@ -1601,6 +1619,9 @@ const IMPORT_COL_MAP = {
   ansprechpartner:'contactName', telefon:'contactPhone', 'e-mail':'contactEmail',
   stellenanzeige:'platformLink', unterlagen:'documentLink', notizen:'notes',
 };
+// Zusatzspalten, die keine Felder der Bewerbung selbst sind, sondern die Statuskategorie
+// (Farbe/Zähl-Kind) beschreiben, aus der die Zeile stammt - siehe exportCSV().
+const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel' };
 
 function parseDelimitedLine(line, delim) {
   const result = []; let cur = ''; let inQ = false;
@@ -1654,17 +1675,24 @@ async function parseSpreadsheetRows(file) {
   return lines.map(line => parseDelimitedLine(line, delim));
 }
 
+// Gibt { apps, statuses } zurück: `statuses` ist der aus den (optionalen) Spalten
+// Statusfarbe/Statustyp rekonstruierte Statuskatalog, ein Eintrag je eindeutigem
+// Statusnamen in der Reihenfolge des ersten Auftretens.
 function spreadsheetRowsToApplications(rows) {
   if (rows.length < 2) throw new Error('Keine Daten gefunden');
   const header = rows[0].map(h => String(h ?? '').replace(/^"|"$/g, '').trim().toLowerCase());
 
   const imported = [];
+  const statusDefs = new Map(); // name -> { name, color, kind }
   for (let i = 1; i < rows.length; i++) {
     const vals = rows[i];
     if (!vals || !vals.length) continue;
     const app = { id: uuid(), createdAt: nowISO(), updatedAt: nowISO(), history: [] };
+    const statusMeta = {};
     header.forEach((h, idx) => {
       const field = IMPORT_COL_MAP[h];
+      const statusField = IMPORT_STATUS_COL_MAP[h];
+      if (statusField) { statusMeta[statusField] = String(vals[idx] ?? '').trim(); return; }
       if (!field) return;
       let val = String(vals[idx] ?? '');
       if (field === 'expectedSalary') val = Number(val.replace(/[^0-9]/g,'')) || null;
@@ -1676,8 +1704,18 @@ function spreadsheetRowsToApplications(rows) {
     app.status = app.status || State.statuses[0]?.name || 'Offen';
     app.history.push({ status: app.status, timestamp: nowISO() });
     imported.push(app);
+
+    if (!statusDefs.has(app.status)) {
+      const color = /^#[0-9a-f]{6}$/i.test(statusMeta.color || '') ? statusMeta.color : null;
+      const kind  = STATUS_KINDS.find(k => k.label === statusMeta.kindLabel)?.key || null;
+      statusDefs.set(app.status, {
+        name: app.status,
+        color: color || getStatusColor(app.status),
+        kind:  kind  || getStatusKind(app.status),
+      });
+    }
   }
-  return imported;
+  return { apps: imported, statuses: [...statusDefs.values()] };
 }
 
 // \u2500\u2500\u2500 Import-Format-Hinweis (Popover) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -1869,13 +1907,21 @@ async function importCSV(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const rows     = await parseSpreadsheetRows(file);
-    const imported = spreadsheetRowsToApplications(rows);
-    if (!imported.length) throw new Error('Keine gültigen Zeilen gefunden');
+    const rows = await parseSpreadsheetRows(file);
+    const { apps, statuses } = spreadsheetRowsToApplications(rows);
+    if (!apps.length) throw new Error('Keine gültigen Zeilen gefunden');
     await idbClear(DB);
-    for (const app of imported) await idbSet(app.id, app, DB);
+    for (const app of apps) await idbSet(app.id, app, DB);
+    // Statuskatalog (Namen, Farben, Zähl-Kind) aus den Statusfarbe-/Statustyp-Spalten
+    // übernehmen, damit importierte Einträge auf diesem Gerät genauso aussehen wie
+    // beim Export - siehe exportCSV()/spreadsheetRowsToApplications().
+    if (statuses.length) {
+      State.statuses = sanitizeStatuses(statuses); saveStatuses();
+      injectStatusStyles(); renderStatusSelectOptions();
+      if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+    }
     await loadAll();
-    toast(`${imported.length} Einträge importiert ✓`, 'success');
+    toast(`${apps.length} Einträge importiert ✓`, 'success');
   } catch (err) {
     toast('Import fehlgeschlagen: ' + err.message, 'error');
   }
@@ -1886,10 +1932,19 @@ async function importData(e) {
   if (!file) return;
   try {
     const text = await file.text();
-    const data = JSON.parse(text);
+    const parsed = JSON.parse(text);
+    // Neues Format: { applications, statuses }. Altes Format (vor diesem Feature
+    // exportiert): einfaches Array von Bewerbungen ohne Statuskatalog.
+    const data     = Array.isArray(parsed) ? parsed : parsed.applications;
+    const statuses = Array.isArray(parsed) ? null   : parsed.statuses;
     if (!Array.isArray(data)) throw new Error('Ungültiges Format');
     await idbClear(DB);
     for (const app of data) await idbSet(app.id, app, DB);
+    if (Array.isArray(statuses) && statuses.length) {
+      State.statuses = sanitizeStatuses(statuses); saveStatuses();
+      injectStatusStyles(); renderStatusSelectOptions();
+      if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+    }
     await loadAll();
     toast(`${data.length} Einträge importiert ✓`, 'success');
   } catch (err) {
