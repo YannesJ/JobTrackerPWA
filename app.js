@@ -67,12 +67,35 @@ function _inferStatusKind(name) {
 function sanitizeStatuses(list) {
   return list
     .filter(s => s && typeof s.name === 'string' && s.name.trim())
-    .map(s => ({
-      name:  s.name.trim(),
-      color: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : (DEFAULT_STATUSES.find(d => d.name === s.name)?.color || '#8888a8'),
-      kind:  STATUS_KINDS.some(k => k.key === s.kind) ? s.kind : _inferStatusKind(s.name),
-    }));
+    .map(s => {
+      // Gegen den GETRIMMTEN Namen nachschlagen: " Offen " soll denselben Standard
+      // bekommen wie "Offen", sonst landet ein Katalog mit Leerraum im Namen
+      // stillschweigend auf der grauen Ersatzfarbe.
+      const name = s.name.trim();
+      return {
+        name,
+        color: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : (DEFAULT_STATUSES.find(d => d.name === name)?.color || '#8888a8'),
+        kind:  STATUS_KINDS.some(k => k.key === s.kind) ? s.kind : _inferStatusKind(name),
+      };
+    });
 }
+// Führt einen eingehenden Statuskatalog (Import, Geräte-Sync, Drive) mit dem lokalen
+// zusammen, statt ihn zu ersetzen. Ersetzen war der Grund, warum Handy und Desktop
+// unterschiedliche Farben zeigten: enthielt eine CSV nur zwei der vier Kategorien,
+// blieben nach dem Import auch nur zwei übrig - und weil statusSlot() index-basiert
+// ist, verschoben sich damit sämtliche Farben. Regeln:
+//   - gleiche Namen: die eingehende Definition (Farbe, Zähl-Kind) gewinnt, damit beide
+//     Geräte nach einem Sync tatsächlich gleich aussehen
+//   - nur lokal vorhandene Kategorien bleiben erhalten (nichts geht verloren)
+//   - Reihenfolge: erst die eingehende, danach die lokal-eigenen
+function mergeStatusCatalog(localList, incomingList) {
+  const local    = sanitizeStatuses(Array.isArray(localList) ? localList : []);
+  const incoming = sanitizeStatuses(Array.isArray(incomingList) ? incomingList : []);
+  if (!incoming.length) return local;
+  const seen = new Set(incoming.map(s => s.name.toLowerCase()));
+  return [...incoming, ...local.filter(s => !seen.has(s.name.toLowerCase()))];
+}
+
 function loadStatuses() {
   try {
     const stored = JSON.parse(localStorage.getItem('jt-statuses') || 'null');
@@ -194,6 +217,109 @@ function toggleKanbanCardField(key) {
   saveKanbanCardFields();
   renderKanban();
 }
+// ─── Kanban-Spalten (ein-/ausblendbar) ────────────────────────────────────────
+// Reine Board-Einstellung, bewusst getrennt vom Status-Filter: eine ausgeblendete
+// Spalte verschwindet nur vom Board, die Bewerbungen bleiben in Tabelle und Zählern
+// sichtbar. Gespeichert werden - wie beim Status-Filter - nur die AUSGEBLENDETEN
+// Namen, damit neu angelegte Kategorien automatisch sichtbar bleiben.
+function loadKanbanHiddenCols() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-kanban-cols-hidden') || 'null');
+    if (Array.isArray(stored)) return new Set(stored);
+  } catch { /* ignore malformed data */ }
+  return new Set();
+}
+function saveKanbanHiddenCols() {
+  localStorage.setItem('jt-kanban-cols-hidden', JSON.stringify([...State.kanbanHiddenCols]));
+}
+function toggleKanbanColumn(name) {
+  const hidden = State.kanbanHiddenCols;
+  if (hidden.has(name)) hidden.delete(name);
+  else {
+    // Mindestens eine Spalte muss stehen bleiben - ein komplett leeres Board wäre
+    // eine Sackgasse, aus der man sich nur über die Einstellungen wieder herausfindet.
+    if (State.statuses.filter(st => !hidden.has(st.name)).length <= 1) {
+      toast('Mindestens eine Spalte muss sichtbar bleiben', 'warning');
+      return;
+    }
+    hidden.add(name);
+  }
+  saveKanbanHiddenCols();
+  renderKanban();
+}
+function setAllKanbanColumns(showAll) {
+  State.kanbanHiddenCols = showAll
+    ? new Set()
+    // "Keine" würde alle Spalten ausblenden - die erste bleibt stehen (siehe oben).
+    : new Set(State.statuses.slice(1).map(s => s.name));
+  saveKanbanHiddenCols();
+  document.querySelectorAll('.columns-popover').forEach(p => p.remove());
+  renderKanban();
+}
+
+function toggleKanbanColumnsMenu(e) {
+  e.stopPropagation();
+  document.querySelectorAll('.columns-popover').forEach(p => p.remove());
+
+  const hidden = State.kanbanHiddenCols;
+  const popover = document.createElement('div');
+  popover.className = 'columns-popover';
+  popover.innerHTML = `
+    <div class="columns-popover-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Spalten anzeigen</span>
+      <button type="button" class="btn btn-ghost btn-xs" style="text-transform:none;letter-spacing:0;font-weight:600" onclick="setAllKanbanColumns(${hidden.size > 0})">${hidden.size > 0 ? 'Alle' : 'Keine'}</button>
+    </div>
+    ${State.statuses.map(st => {
+      // Anzahl mit anzeigen, damit niemand versehentlich eine Spalte voller
+      // Bewerbungen ausblendet und sie dann auf dem Board vermisst.
+      const count = State.all.filter(a => a.status === st.name).length;
+      return `
+      <label class="columns-popover-item">
+        <input type="checkbox" ${hidden.has(st.name) ? '' : 'checked'} onchange="toggleKanbanColumn('${escJs(st.name)}')" />
+        <span style="flex:1">${escHtml(st.name)}</span>
+        <span class="status-count">${count}</span>
+      </label>`;
+    }).join('')}
+  `;
+  _placePopoverAt(popover, e.currentTarget);
+}
+
+// Gemeinsame Positionierung + Aufräumen für die einfachen Auswahl-Popover. Die Logik
+// stand vorher fünfmal fast wortgleich im Code.
+function _placePopoverAt(popover, btn, alignRight = true) {
+  const rect = btn.getBoundingClientRect();
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const anchor = alignRight ? rect.right - popRect.width : rect.left;
+  const left = Math.min(Math.max(anchor, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.right      = 'auto';
+  popover.style.visibility = '';
+
+  setTimeout(() => {
+    const cleanup = () => {
+      popover.remove();
+      document.removeEventListener('click', onDocClick, true);
+      window.removeEventListener('scroll', cleanup, true);
+      window.removeEventListener('resize', cleanup);
+    };
+    const onDocClick = (ev) => {
+      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      cleanup();
+    };
+    document.addEventListener('click', onDocClick, true);
+    window.addEventListener('scroll', cleanup, true);
+    window.addEventListener('resize', cleanup);
+  }, 0);
+}
+
 function toggleKanbanFieldsMenu(e) {
   e.stopPropagation();
   document.querySelectorAll('.columns-popover').forEach(p => p.remove());
@@ -445,6 +571,8 @@ const State = {
   tableColumns: loadTableColumns(),
   // Welche optionalen Infos auf Kanban-Karten sichtbar sind
   kanbanCardFields: loadKanbanCardFields(),
+  // Welche Kanban-Spalten (Statusspalten) ausgeblendet sind - reine Board-Einstellung
+  kanbanHiddenCols: loadKanbanHiddenCols(),
   // Kalender-Termine
   events: [],
   calendarMonth: (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; })(),
@@ -582,11 +710,32 @@ function escHtml(s) {
 }
 function escAttr(s) { return escHtml(s); }
 // Escaped for use inside a single-quoted JS string literal within an inline
-// on*="...('${..}')" handler (status names are free text since custom categories).
+// on*="...('${..}')" handler (status names are free text since custom categories,
+// und IDs können aus einer importierten Datei stammen).
+// & MUSS zuerst ersetzt werden: der Browser entschlüsselt Attributwerte, BEVOR er
+// den Inhalt als JS parst. Bliebe & stehen, würde ein Name wie "&apos;" nach dem
+// Entschlüsseln zu einem echten ' und damit aus dem String ausbrechen.
 function escJs(s) {
   return String(s ?? '')
+    .replace(/&/g, '&amp;')
     .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     .replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// Links kommen aus freien Eingabefeldern - und über Import/Geräte-Sync auch von
+// außerhalb. Nur harmlose Schemata als href durchlassen; alles andere (allen voran
+// javascript:) wird nicht verlinkt. Eine Eingabe ganz ohne Schema ("example.com/job")
+// bleibt erlaubt, die kann kein Skript auslösen.
+const _UNSAFE_LINK_SCHEME = /^[a-z0-9.+-]*:/i;
+const _SAFE_LINK_SCHEMES  = ['http:', 'https:', 'mailto:', 'tel:'];
+function isSafeLinkHref(url) {
+  const s = String(url ?? '').trim();
+  if (!s) return false;
+  // Steuerzeichen (\t\n\r) mitten im Schema werden von Browsern ignoriert -
+  // "java\tscript:" wäre sonst ein Schlupfloch.
+  const probe = s.replace(/[\u0000-\u0020]/g, '');
+  const m = probe.match(_UNSAFE_LINK_SCHEME);
+  if (!m) return true; // gar kein Schema -> relative/schemalose Adresse, unbedenklich
+  return _SAFE_LINK_SCHEMES.includes(m[0].toLowerCase());
 }
 function statusClass(s) {
   return `badge-dyn s-${statusSlot(s)}`;
@@ -630,8 +779,8 @@ function toast(msg, type = 'info', opts = {}) {
 const SVG_SUN  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
 const SVG_MOON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
 const SVG_MONITOR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
-const SVG_EYE     = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const SVG_EYE_OFF = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+const SVG_EURO     = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h12M4 14h9M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/></svg>`
+const SVG_EURO_OFF = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h12M4 14h9M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/><line x1="3" y1="3" x2="21" y2="21"/></svg>`
 
 // ─── Sidebar collapse (desktop) ─────────────────────────────────────────────────
 function toggleSidebar() {
@@ -649,9 +798,17 @@ function applyTheme(theme) {
   // Update sidebar toggle button label
   const btn = document.getElementById('theme-toggle-btn');
   if (btn) {
-    if (theme === 'dark')        btn.innerHTML = `${SVG_SUN} Hell`;
-    else if (theme === 'light')  btn.innerHTML = `${SVG_MOON} Dunkel`;
-    else                         btn.innerHTML = `${SVG_MONITOR} System`;
+    const icon  = theme === 'dark' ? SVG_SUN : theme === 'light' ? SVG_MOON : SVG_MONITOR;
+    const label = theme === 'dark' ? 'Helles Design' : theme === 'light' ? 'Dunkles Design' : 'Design folgt dem System';
+    // In der Sidebar steht der Schalter icon-only neben dem Gehalts-Schalter; die
+    // Beschriftung wandert dort in title/aria-label statt daneben zu stehen.
+    if (btn.dataset.themeToggleBtn === 'icon') {
+      btn.innerHTML = icon;
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+    } else {
+      btn.innerHTML = `${icon} ${theme === 'dark' ? 'Hell' : theme === 'light' ? 'Dunkel' : 'System'}`;
+    }
   }
 
   // Highlight active theme in Settings buttons
@@ -718,7 +875,8 @@ function applySalaryBlur(active) {
   document.documentElement.classList.toggle('blur-salary', active);
   document.querySelectorAll('[data-salary-blur-btn]').forEach(b => {
     const iconOnly = b.dataset.salaryBlurBtn === 'icon';
-    const icon = active ? SVG_EYE_OFF : SVG_EYE;
+    // Euro statt Auge: der Schalter verbirgt Gehaltsangaben, nicht "die Ansicht".
+    const icon = active ? SVG_EURO_OFF : SVG_EURO;
     b.innerHTML = iconOnly ? icon : `${icon} ${active ? 'Gehalt einblenden' : 'Gehalt verbergen'}`;
     b.title = active ? 'Gehaltsangaben einblenden' : 'Gehaltsangaben vor Blicken schützen';
     if (iconOnly) b.setAttribute('aria-label', b.title);
@@ -775,6 +933,27 @@ async function cleanupOldTombstones() {
       await idbDel(id, DB);
     }
   }
+}
+
+// Die Benachrichtigungs-Logik merkt sich pro Bewerbung, wann sie zuletzt gemeldet
+// wurde (jt-stale-*, jt-followup-*, jt-rem-fired-*). Diese Schlüssel wurden nie wieder
+// entfernt - auch nicht, wenn die Bewerbung längst gelöscht war. Beim Start einmal
+// durchgehen und alles wegräumen, wozu es keinen Eintrag mehr gibt. Fängt auch die
+// Altlasten ein, die bei Bestandsnutzern schon herumliegen.
+const NOTIF_KEY_PREFIXES = ['jt-stale-', 'jt-followup-', 'jt-rem-fired-'];
+function cleanupOrphanedNotificationKeys(liveIds) {
+  const stale = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    const prefix = NOTIF_KEY_PREFIXES.find(p => key.startsWith(p));
+    if (!prefix) continue;
+    // jt-rem-fired-reminder-<appId> -> der Erinnerungs-Schlüssel trägt das Präfix mit
+    const id = key.slice(prefix.length).replace(/^reminder-/, '');
+    if (!liveIds.has(id)) stale.push(key);
+  }
+  stale.forEach(k => localStorage.removeItem(k));
+  return stale.length;
 }
 
 // ─── Demo-Daten für neue, leere Installationen ─────────────────────────────────
@@ -1080,9 +1259,32 @@ function _clearKanbanDropIndicator() {
 }
 
 // ── Touch support (iOS Safari doesn't fire drag events) ─────────────────────
+// Der Drag startet bewusst NICHT sofort bei der Berührung, sondern erst wenn der
+// Finger sich merklich vertikal bewegt hat (oder lange genug liegen bleibt). Vorher
+// hing er am ersten touchstart und onTouchMove() rief preventDefault() - damit ließ
+// sich die Kanban-Spalte auf dem Handy überhaupt nicht mehr scrollen, sobald der
+// Finger auf einer Karte lag.
+const TOUCH_DRAG_THRESHOLD_PX = 8;
+const TOUCH_DRAG_HOLD_MS      = 220;
+let _touchStartPos  = null;
+let _touchHoldTimer = null;
+
 function onTouchStart(e, id) {
   dragId    = id;
   _touchSrc = e.currentTarget;
+  const t = e.touches[0];
+  _touchStartPos = { x: t.clientX, y: t.clientY, at: Date.now() };
+  clearTimeout(_touchHoldTimer);
+  // Am Anfasser (die Griff-Punkte links auf der Karte) ist die Absicht eindeutig -
+  // dort trägt das CSS touch-action:none, also gibt es keinen Konflikt mit dem
+  // Scrollen und der Drag darf sofort starten. Überall sonst auf der Karte gilt
+  // touch-action:pan-y, damit die Spalte scrollbar bleibt.
+  if (e.target?.closest?.('.kc-handle')) { _beginTouchDrag(); return; }
+  _touchHoldTimer = setTimeout(() => { if (_touchSrc && !_touchClone) _beginTouchDrag(); }, TOUCH_DRAG_HOLD_MS);
+}
+
+function _beginTouchDrag() {
+  if (!_touchSrc || _touchClone) return;
   _touchSrc.classList.add('dragging');
 
   // Create a ghost clone that follows the finger
@@ -1099,7 +1301,21 @@ function onTouchStart(e, id) {
 }
 
 function onTouchMove(e) {
-  if (!_touchClone) return;
+  if (!_touchSrc) return;
+  if (!_touchClone) {
+    // Noch kein Drag: erst ab der Schwelle übernehmen. Bis dahin das Scrollen der
+    // Spalte NICHT blockieren.
+    const t0 = e.touches[0];
+    const dx = Math.abs(t0.clientX - _touchStartPos.x);
+    const dy = Math.abs(t0.clientY - _touchStartPos.y);
+    const heldLongEnough = Date.now() - _touchStartPos.at >= TOUCH_DRAG_HOLD_MS;
+    // Eine überwiegend horizontale Bewegung ist als Verschieben gemeint, eine
+    // vertikale ohne Halten ist Scrollen.
+    if (!heldLongEnough && dy > dx) { _cancelTouchDrag(); return; }
+    if (dx < TOUCH_DRAG_THRESHOLD_PX && dy < TOUCH_DRAG_THRESHOLD_PX && !heldLongEnough) return;
+    clearTimeout(_touchHoldTimer);
+    _beginTouchDrag();
+  }
   e.preventDefault(); // prevent scroll
   const t = e.touches[0];
   const r = _touchSrc.getBoundingClientRect();
@@ -1116,8 +1332,19 @@ function onTouchMove(e) {
   _lastDropTarget = col || null;
 }
 
+function _cancelTouchDrag() {
+  clearTimeout(_touchHoldTimer);
+  _touchClone?.remove(); _touchClone = null;
+  _touchSrc?.classList.remove('dragging');
+  _touchSrc = null; dragId = null; _touchStartPos = null;
+  _clearKanbanDropIndicator();
+}
+
 async function onTouchEnd(e) {
-  if (!_touchClone) return;
+  clearTimeout(_touchHoldTimer);
+  // Ohne begonnenen Drag war das eine normale Berührung (Tippen/Scrollen) - der
+  // onclick-Handler der Karte übernimmt.
+  if (!_touchClone) { _cancelTouchDrag(); return; }
   _touchClone.remove(); _touchClone = null;
   _touchSrc?.classList.remove('dragging');
 
@@ -1128,7 +1355,7 @@ async function onTouchEnd(e) {
     _lastDropTarget = null;
   }
   _clearKanbanDropIndicator();
-  dragId = null; _touchSrc = null;
+  dragId = null; _touchSrc = null; _touchStartPos = null;
 }
 
 // Wendet einen Kanban-Drop an: ändert bei Bedarf den Status (Spaltenwechsel) und
@@ -1139,7 +1366,10 @@ async function _applyKanbanDrop(id, newStatus, insertIndex) {
   const app = State.all.find(a => a.id === id);
   if (!app) return;
 
-  const existing = sortAppsForKanban(State.filtered.filter(a => a.status === newStatus), newStatus)
+  // Gegen State.all, nicht State.filtered: bei aktivem Such-/Statusfilter fielen die
+  // gerade ausgeblendeten Karten sonst aus der gespeicherten Reihenfolge und landeten
+  // hinterher am Spaltenende.
+  const existing = sortAppsForKanban(State.all.filter(a => a.status === newStatus), newStatus)
     .map(a => a.id).filter(cid => cid !== id);
   const idx = insertIndex == null ? existing.length : Math.min(insertIndex, existing.length);
   existing.splice(idx, 0, id);
@@ -1399,8 +1629,14 @@ function openDetail(id) {
   // Links
   const linksEl = document.getElementById('d-links');
   linksEl.innerHTML = '';
-  if (a.platformLink) linksEl.innerHTML += `<a href="${escAttr(a.platformLink)}" target="_blank" rel="noopener" class="link-pill"><i data-lucide="external-link" style="width:12px;height:12px"></i>Stellenanzeige</a>`;
-  if (a.documentLink) linksEl.innerHTML += `<a href="${escAttr(a.documentLink)}" target="_blank" rel="noopener" class="link-pill"><i data-lucide="folder-open" style="width:12px;height:12px"></i>Unterlagen</a>`;
+  // isSafeLinkHref(): Links können aus Import/Geräte-Sync stammen, ein javascript:-href
+  // würde beim Klick im Kontext der App laufen. Unsichere Adressen werden als reiner
+  // Text angezeigt statt verlinkt - sichtbar bleibt die Angabe trotzdem.
+  const linkPill = (url, icon, label) => isSafeLinkHref(url)
+    ? `<a href="${escAttr(url)}" target="_blank" rel="noopener noreferrer" class="link-pill"><i data-lucide="${icon}" style="width:12px;height:12px"></i>${label}</a>`
+    : `<span class="link-pill link-pill--unsafe" title="${escAttr(url)}"><i data-lucide="alert-triangle" style="width:12px;height:12px"></i>${label} (kein gültiger Link)</span>`;
+  if (a.platformLink) linksEl.innerHTML += linkPill(a.platformLink, 'external-link', 'Stellenanzeige');
+  if (a.documentLink) linksEl.innerHTML += linkPill(a.documentLink, 'folder-open', 'Unterlagen');
   lucide.createIcons({ nodes: [linksEl] });
 
   // Notes
@@ -1594,19 +1830,37 @@ function showStatusMenu(e, id) {
 }
 
 // ─── Custom Confirm Dialog (replaces window.confirm - works in iOS PWA) ───────
+// WICHTIG: jeder Weg aus diesem Dialog muss das Promise auflösen. Vorher hing der
+// Backdrop-Klick am nackten hideModal() im HTML - der Aufrufer wartete dann für immer
+// (Formular ließ sich nicht mehr schließen, Drive-Sync-Button blieb auf "Verbinde…").
+// Deshalb hängen Backdrop und Escape jetzt hier drin, nicht im Markup.
+let _confirmResolve = null;
+function _settleConfirm(value) {
+  if (!_confirmResolve) return;
+  const done = _confirmResolve;
+  _confirmResolve = null;
+  hideModal('confirm-modal');
+  done(value);
+}
 function showConfirm(title, message, okLabel = 'OK', variant = 'primary') {
   return new Promise(resolve => {
+    // Ein bereits offener Dialog (sollte nicht vorkommen) wird sauber abgeräumt,
+    // statt seinen Aufrufer hängen zu lassen.
+    _settleConfirm(false);
+    _confirmResolve = resolve;
     const el = document.getElementById('confirm-modal');
     document.getElementById('confirm-title').textContent   = title;
     document.getElementById('confirm-message').textContent = message;
     const btn = document.getElementById('confirm-ok');
     btn.textContent  = okLabel;
     btn.className    = `btn btn-${variant}`;
-    btn.onclick      = () => { hideModal('confirm-modal'); resolve(true);  };
-    document.getElementById('confirm-cancel').onclick = () => { hideModal('confirm-modal'); resolve(false); };
+    btn.onclick      = () => _settleConfirm(true);
+    document.getElementById('confirm-cancel').onclick = () => _settleConfirm(false);
+    el.onclick = (ev) => { if (ev.target === el) _settleConfirm(false); };
     showModal('confirm-modal');
   });
 }
+function isConfirmOpen() { return _confirmResolve !== null; }
 function showModal(id) {
   const el = document.getElementById(id);
   el.classList.remove('hidden');
@@ -1681,15 +1935,32 @@ function checkBackupReminder() {
   if (dotEl) dotEl.className = `persist-dot ${overdue ? 'warn' : 'ok'}`;
 }
 
+// Ein Backup muss alles enthalten, was die App als Nutzerdaten führt - die Oberfläche
+// verspricht "Speichert alle Daten". Bis hierher fehlten Kalendertermine und
+// Erinnerungen komplett: wer exportierte, den Browserspeicher leerte und zurückspielte,
+// verlor sämtliche Termine. Statuskategorien und Kanban-Sortierung gehören mit rein,
+// weil das Board auf dem Zielgerät sonst anders aussieht und anders sortiert.
+async function buildBackupPayload(applications) {
+  const [eventPairs, reminderPairs] = await Promise.all([
+    idbEntries(EVENTS).catch(() => []),
+    idbEntries(REMINDERS).catch(() => []),
+  ]);
+  return {
+    schemaVersion: 2,
+    exportedAt:    nowISO(),
+    applications,
+    statuses:      State.statuses,
+    kanbanSort:    State.kanbanSort,
+    events:        eventPairs.map(([, v]) => v),
+    reminders:     reminderPairs.map(([, v]) => v),
+  };
+}
+
 async function exportData() {
   const pairs = await idbEntries(DB);
   const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
-  // Statuskategorien (Name, Farbe, Zähl-Kind) und die Kanban-Sortierung (inkl. per
-  // Drag&Drop gesetzter "Eigener Reihenfolge") gehören mit in den Export, sonst sieht
-  // das Kanban-Board auf einem anderen Gerät nach dem Import anders aus/sortiert sich
-  // anders als auf dem Ursprungsgerät.
-  const payload = { applications: data, statuses: State.statuses, kanbanSort: State.kanbanSort };
+  const payload = await buildBackupPayload(data);
   const blob  = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
@@ -1700,16 +1971,25 @@ async function exportData() {
   toast(`${data.length} Einträge exportiert`, 'success');
 }
 
-async function exportCSV() {
-  const pairs = await idbEntries(DB);
-  const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
-  if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
+// Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
+// da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
+// Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
+const CSV_COLS = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Kartenposition','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
 
-  // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
-  // da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
-  // Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
-  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Kartenposition','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+/** Baut Kopfzeile + Datenzeilen (noch ohne BOM/Zeilentrenner) - ausgelagert, damit sich
+ *  der Round-Trip Export->Import ohne Datei und ohne Browser testen lässt. */
+function buildCsvRows(data) {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const statusMeta = (name) => [
+    esc(getStatusColor(name)),
+    esc(STATUS_KINDS.find(k => k.key === getStatusKind(name))?.label || ''),
+    // Statusreihenfolge (1-basierter Index in State.statuses) wird mitexportiert, weil
+    // sonst beim Import nur die Reihenfolge des ersten Auftretens in den Zeilen übrig
+    // bliebe - die stimmt i.A. nicht mit der konfigurierten Kanban-Spaltenreihenfolge
+    // überein, sobald z.B. der erste Eintrag zufällig einen späten Status hat.
+    esc(State.statuses.findIndex(s => s.name === name) + 1 || ''),
+  ];
+
   const rows = data.map(a => {
     // Kartenposition (1-basierter Index innerhalb der per Drag&Drop gesetzten "Eigenen
     // Reihenfolge" der Statusspalte) nur befüllen, wenn diese Spalte tatsächlich manuell
@@ -1717,13 +1997,7 @@ async function exportCSV() {
     const ks = State.kanbanSort[a.status];
     const cardPos = ks?.col === 'custom' ? ks.order?.indexOf(a.id) : -1;
     return [
-      esc(a.company), esc(a.position), esc(a.status), esc(getStatusColor(a.status)),
-      // Statusreihenfolge (1-basierter Index in State.statuses) wird mitexportiert, weil
-      // sonst beim Import nur die Reihenfolge des ersten Auftretens in den Zeilen übrig
-      // bliebe - die stimmt i.A. nicht mit der konfigurierten Kanban-Spaltenreihenfolge
-      // überein, sobald z.B. der erste Eintrag zufällig einen späten Status hat.
-      esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''),
-      esc(State.statuses.findIndex(s => s.name === a.status) + 1 || ''),
+      esc(a.company), esc(a.position), esc(a.status), ...statusMeta(a.status),
       esc(cardPos > -1 ? cardPos + 1 : ''), esc(a.source),
       esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
       esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
@@ -1731,7 +2005,27 @@ async function exportCSV() {
     ].join(';');
   });
 
-  const csv  = '\uFEFF' + [cols.join(';'), ...rows].join('\r\n'); // BOM for Excel
+  // Kategorien, zu denen es gerade keine einzige Bewerbung gibt, hätten sonst keine
+  // Zeile - der Katalog würde auf dem Zielgerät auf die benutzten Kategorien
+  // zusammenschrumpfen. Weil statusSlot() index-basiert ist, verschieben sich dadurch
+  // ALLE Farben, nicht nur die der fehlenden Kategorie. Solche Kategorien bekommen
+  // deshalb eine reine Katalogzeile ohne Firma: der Import überspringt sie als
+  // Bewerbung (dort ist Firma Pflicht), liest die Statusangaben aber mit.
+  const used = new Set(data.map(a => a.status));
+  const blanks = (n) => Array.from({ length: n }, () => esc(''));
+  const catalogRows = State.statuses.filter(s => !used.has(s.name)).map(s =>
+    [esc(''), esc(''), esc(s.name), ...statusMeta(s.name), ...blanks(12)].join(';')
+  );
+
+  return [CSV_COLS.join(';'), ...rows, ...catalogRows];
+}
+
+async function exportCSV() {
+  const pairs = await idbEntries(DB);
+  const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
+  if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
+
+  const csv  = '﻿' + buildCsvRows(data).join('\r\n'); // BOM for Excel
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const el   = document.createElement('a');
@@ -1755,18 +2049,34 @@ const IMPORT_COL_MAP = {
 // (Farbe/Zähl-Kind) beschreiben, aus der die Zeile stammt - siehe exportCSV().
 const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order', kartenposition:'cardPos' };
 
-function parseDelimitedLine(line, delim) {
-  const result = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"' && !inQ) { inQ = true; }
-    else if (ch === '"' && inQ && line[i+1] === '"') { cur += '"'; i++; }
-    else if (ch === '"' && inQ) { inQ = false; }
-    else if (ch === delim && !inQ) { result.push(cur); cur = ''; }
+// Liest eine komplette CSV/TSV-Datei am Stück statt Zeile für Zeile. Zeilenweise ging
+// nicht: eine Notiz mit Zeilenumbruch wird beim Export korrekt als mehrzeiliges
+// Quoted-Field geschrieben, und der alte Parser zerriss genau die - aus einem Datensatz
+// wurden zwei kaputte, der zweite fiel mangels Firma still unter den Tisch. Ein Export
+// war damit nicht mehr sauber importierbar.
+function parseDelimitedText(text, delim) {
+  const rows = [];
+  let row = [], cur = '', inQ = false;
+  const endField = () => { row.push(cur); cur = ''; };
+  const endRow   = () => { endField(); rows.push(row); row = []; };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i+1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else cur += ch;                       // Zeilenumbrüche gehören hier ins Feld
+      continue;
+    }
+    if (ch === '"') { inQ = true; }
+    else if (ch === delim) endField();
+    else if (ch === '\r') { if (text[i+1] === '\n') i++; endRow(); }
+    else if (ch === '\n') endRow();
     else cur += ch;
   }
-  result.push(cur);
-  return result;
+  // Letzte Zeile nur übernehmen, wenn überhaupt etwas drinsteht (Datei endet
+  // typischerweise mit einem Zeilenumbruch).
+  if (cur !== '' || row.length) endRow();
+  return rows.filter(r => r.some(v => String(v).trim() !== ''));
 }
 
 // xlsx.full.min.js (~880KB, vendored under vendor/xlsx/) is only needed for .xlsx/.xls
@@ -1802,9 +2112,8 @@ async function parseSpreadsheetRows(file) {
   }
   const text  = await file.text();
   const clean = text.replace(/^\uFEFF/, '');
-  const lines = clean.split(/\r?\n/).filter(l => l.trim());
   const delim = name.endsWith('.tsv') ? '\t' : ';';
-  return lines.map(line => parseDelimitedLine(line, delim));
+  return parseDelimitedText(clean, delim);
 }
 
 // Gibt { apps, statuses } zurück: `statuses` ist der aus den (optionalen) Spalten
@@ -1835,24 +2144,29 @@ function spreadsheetRowsToApplications(rows) {
       else val = val.trim() || null;
       app[field] = val;
     });
-    if (!app.company) continue;
-    app.status = app.status || State.statuses[0]?.name || 'Offen';
-    app.history.push({ status: app.status, timestamp: nowISO() });
-    imported.push(app);
 
-    if (!statusDefs.has(app.status)) {
+    // Statusangaben der Zeile IMMER auswerten - auch bei einer reinen Katalogzeile ohne
+    // Firma (siehe buildCsvRows()). Genau die transportiert Kategorien, zu denen es
+    // gerade keine Bewerbung gibt; ohne sie schrumpft der Katalog beim Import.
+    const rowStatus = app.status || (app.company ? (State.statuses[0]?.name || 'Offen') : null);
+    if (rowStatus && !statusDefs.has(rowStatus)) {
       const color = /^#[0-9a-f]{6}$/i.test(statusMeta.color || '') ? statusMeta.color : null;
       const kind  = STATUS_KINDS.find(k => k.label === statusMeta.kindLabel)?.key || null;
       const order = Number(statusMeta.order);
-      statusDefs.set(app.status, {
-        name: app.status,
-        color: color || getStatusColor(app.status),
-        kind:  kind  || getStatusKind(app.status),
+      statusDefs.set(rowStatus, {
+        name: rowStatus,
+        color: color || getStatusColor(rowStatus),
+        kind:  kind  || getStatusKind(rowStatus),
         // Statuskategorien ohne (gültige) Reihenfolge-Spalte landen hinter denen mit
         // Angabe, in der Reihenfolge ihres ersten Auftretens (Map-Einfügereihenfolge).
         order: Number.isFinite(order) && order > 0 ? order : 1000 + statusDefs.size,
       });
     }
+
+    if (!app.company) continue; // Katalogzeile - kein Datensatz
+    app.status = rowStatus;
+    app.history.push({ status: app.status, timestamp: nowISO() });
+    imported.push(app);
 
     const cardPos = Number(statusMeta.cardPos);
     if (Number.isFinite(cardPos) && cardPos > 0) cardPositions.push({ id: app.id, status: app.status, pos: cardPos });
@@ -2061,6 +2375,91 @@ function toggleDetailMoreMenu(e, id) {
   `);
 }
 
+// Prüft und repariert Bewerbungen aus einer fremden Quelle (JSON-Import, Drive-Backup,
+// Geräte-Sync), BEVOR irgendetwas geschrieben wird. Vorher ging ein Eintrag ohne id
+// mitten im Import auf die Nase - und zwar nachdem die Datenbank bereits geleert war,
+// also mit Totalverlust als Ergebnis.
+function normalizeImportedApps(list) {
+  if (!Array.isArray(list)) return [];
+  const seenIds = new Set();
+  const out = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const company = typeof raw.company === 'string' ? raw.company.trim() : '';
+    if (!company) continue; // Firma ist auch beim Anlegen Pflicht
+    let id = typeof raw.id === 'string' ? raw.id.trim() : '';
+    if (!id || seenIds.has(id)) id = uuid();
+    seenIds.add(id);
+    out.push({
+      ...raw,
+      id,
+      company,
+      history: Array.isArray(raw.history) ? raw.history : [],
+      createdAt: raw.createdAt || nowISO(),
+      updatedAt: raw.updatedAt || nowISO(),
+    });
+  }
+  return out;
+}
+
+// Schreibt einen kompletten Datensatz (Bewerbungen + optionale Termine/Erinnerungen)
+// in die Datenbank. Termine und Erinnerungen werden NUR angefasst, wenn die Datei sie
+// überhaupt mitbringt - ein Backup aus einer älteren Version darf vorhandene Termine
+// nicht stillschweigend löschen.
+async function applyImportedData({ apps, events, reminders }) {
+  await idbClear(DB);
+  for (const app of apps) await idbSet(app.id, app, DB);
+  if (Array.isArray(events)) {
+    await idbClear(EVENTS);
+    for (const ev of events) {
+      if (ev && typeof ev === 'object' && ev.date && ev.title) {
+        const id = typeof ev.id === 'string' && ev.id ? ev.id : uuid();
+        await idbSet(id, { ...ev, id }, EVENTS);
+      }
+    }
+  }
+  if (Array.isArray(reminders)) {
+    await idbClear(REMINDERS);
+    for (const r of reminders) {
+      if (r && typeof r === 'object' && r.appId && r.date) {
+        const id = typeof r.id === 'string' && r.id ? r.id : `reminder-${r.appId}`;
+        await idbSet(id, { ...r, id }, REMINDERS);
+      }
+    }
+  }
+}
+
+// Gemeinsame Rückfrage vor jedem überschreibenden Import. Bisher löschte ein Fehlklick
+// auf "Importieren" den kompletten Bestand ohne Nachfrage - anders als "Alle Daten
+// löschen" und "Kategorie löschen", die längst nachfragen.
+async function confirmDestructiveImport(incomingCount) {
+  const existing = State.all.length;
+  if (!existing) return true;
+  return showConfirm(
+    'Import überschreibt vorhandene Daten',
+    `Auf diesem Gerät ${existing === 1 ? 'liegt 1 Bewerbung' : `liegen ${existing} Bewerbungen`}. `
+      + `Der Import ersetzt ${existing === 1 ? 'sie' : 'diese'} durch ${incomingCount === 1 ? '1 Eintrag' : `${incomingCount} Einträge`} aus der Datei.\n\n`
+      + 'Vorher ein Backup zu exportieren, ist der sichere Weg. Fortfahren?',
+    'Importieren', 'danger'
+  );
+}
+
+// Übernimmt einen eingehenden Statuskatalog + Kanban-Sortierung (Import/Sync) und
+// frischt alles auf, was davon abhängt.
+function applyIncomingCatalog(statuses, kanbanSort) {
+  if (Array.isArray(statuses) && statuses.length) {
+    State.statuses = mergeStatusCatalog(State.statuses, statuses);
+    saveStatuses();
+    injectStatusStyles();
+    renderStatusSelectOptions();
+    if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+  }
+  if (kanbanSort && typeof kanbanSort === 'object' && !Array.isArray(kanbanSort)) {
+    State.kanbanSort = { ...State.kanbanSort, ...sanitizeKanbanSort(kanbanSort) };
+    saveKanbanSort();
+  }
+}
+
 async function importCSV(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -2068,55 +2467,49 @@ async function importCSV(e) {
     const rows = await parseSpreadsheetRows(file);
     const { apps, statuses, kanbanSort } = spreadsheetRowsToApplications(rows);
     if (!apps.length) throw new Error('Keine gültigen Zeilen gefunden');
-    await idbClear(DB);
-    for (const app of apps) await idbSet(app.id, app, DB);
-    // Statuskatalog (Namen, Farben, Zähl-Kind) aus den Statusfarbe-/Statustyp-Spalten
-    // übernehmen, damit importierte Einträge auf diesem Gerät genauso aussehen wie
-    // beim Export - siehe exportCSV()/spreadsheetRowsToApplications().
-    if (statuses.length) {
-      State.statuses = sanitizeStatuses(statuses); saveStatuses();
-      injectStatusStyles(); renderStatusSelectOptions();
-      if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
-    }
-    // Eigene Kanban-Kartenreihenfolge aus der Kartenposition-Spalte übernehmen (nur für
-    // Spalten, die beim Export tatsächlich manuell sortiert waren - siehe exportCSV()).
-    if (Object.keys(kanbanSort).length) {
-      State.kanbanSort = sanitizeKanbanSort(kanbanSort); saveKanbanSort();
-    }
+    if (!await confirmDestructiveImport(apps.length)) { toast('Import abgebrochen', 'info'); e.target.value = ''; return; }
+    await applyImportedData({ apps });
+    // Statuskatalog (Namen, Farben, Zähl-Kind) und eigene Kanban-Reihenfolge aus den
+    // Zusatzspalten übernehmen - siehe buildCsvRows()/spreadsheetRowsToApplications().
+    applyIncomingCatalog(statuses, kanbanSort);
     await loadAll();
+    await loadEvents();
     toast(`${apps.length} Einträge importiert ✓`, 'success');
   } catch (err) {
     toast('Import fehlgeschlagen: ' + err.message, 'error');
   }
   e.target.value = '';
 }
+
 async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    // Neues Format: { applications, statuses, kanbanSort }. Altes Format (vor diesem
-    // Feature exportiert): einfaches Array von Bewerbungen ohne Statuskatalog.
-    const data       = Array.isArray(parsed) ? parsed : parsed.applications;
-    const statuses   = Array.isArray(parsed) ? null   : parsed.statuses;
-    const kanbanSort = Array.isArray(parsed) ? null   : parsed.kanbanSort;
-    if (!Array.isArray(data)) throw new Error('Ungültiges Format');
-    await idbClear(DB);
-    for (const app of data) await idbSet(app.id, app, DB);
-    if (Array.isArray(statuses) && statuses.length) {
-      State.statuses = sanitizeStatuses(statuses); saveStatuses();
-      injectStatusStyles(); renderStatusSelectOptions();
-      if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
-    }
-    // Eigene Kanban-Kartenreihenfolge (falls die exportierende Version das Feature
-    // schon kannte) 1:1 übernehmen - anders als bei CSV bleiben die Bewerbungs-IDs
-    // beim JSON-Import erhalten, die gespeicherten Reihenfolgen passen also direkt.
-    if (kanbanSort && typeof kanbanSort === 'object' && !Array.isArray(kanbanSort)) {
-      State.kanbanSort = sanitizeKanbanSort(kanbanSort); saveKanbanSort();
-    }
+    // Neues Format: { applications, statuses, kanbanSort, events, reminders }.
+    // Ältere Formate: Objekt ohne events/reminders, oder ganz früher ein reines
+    // Array von Bewerbungen. Beide müssen weiter lesbar bleiben.
+    const isArray    = Array.isArray(parsed);
+    const rawApps    = isArray ? parsed : parsed?.applications;
+    if (!Array.isArray(rawApps)) throw new Error('Ungültiges Format');
+    const apps = normalizeImportedApps(rawApps);
+    if (!apps.length) throw new Error('Keine gültigen Einträge gefunden');
+    if (!await confirmDestructiveImport(apps.length)) { toast('Import abgebrochen', 'info'); e.target.value = ''; return; }
+
+    await applyImportedData({
+      apps,
+      events:    isArray ? undefined : parsed.events,
+      reminders: isArray ? undefined : parsed.reminders,
+    });
+    // Anders als bei CSV bleiben die Bewerbungs-IDs beim JSON-Import erhalten, die
+    // gespeicherten Kanban-Reihenfolgen passen also direkt.
+    if (!isArray) applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
     await loadAll();
-    toast(`${data.length} Einträge importiert ✓`, 'success');
+    await loadEvents();
+    if (document.getElementById('page-calendar')?.classList.contains('active')) renderCalendar();
+    const skipped = rawApps.length - apps.length;
+    toast(`${apps.length} Einträge importiert ✓${skipped > 0 ? ` (${skipped} übersprungen)` : ''}`, 'success');
   } catch (err) {
     toast('Import fehlgeschlagen: ' + err.message, 'error');
   }
@@ -2173,12 +2566,16 @@ async function toggleMasterPush(enabled) {
 
 function fireNotification(title, body, tag, appId) {
   if (!isPushActive()) return;
+  // Relativ zur Seite aufloesen: ein an der Wurzel beginnender Icon-Pfad zeigte unter
+  // /JobTrackerPWA/ auf die Wurzel von github.io - das Symbol fehlte, und ein Klick auf
+  // die Benachrichtigung landete auf einer fremden Seite statt in der App.
+  const base = new URL('./', location.href).href;
   const payload = {
     title, body,
     tag:   tag   || 'jt',
-    icon:  '/icons/icon-192.png',
-    badge: '/icons/icon-96.png',
-    data:  { appId, url: '/' },
+    icon:  base + 'icons/icon-192.png',
+    badge: base + 'icons/icon-96.png',
+    data:  { appId, url: base },
   };
   try {
     const ctrl = navigator.serviceWorker?.controller;
@@ -2207,7 +2604,7 @@ async function updateBadge() {
 
 async function countDueBadgeItems() {
   let count = 0;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr(new Date());
 
   // Manual reminders due today or overdue
   try {
@@ -2234,7 +2631,7 @@ function checkStaleReminders() {
   if (!isPushActive()) { updateBadge(); return; }
   const thr = State.settings.staleThreshold || {};
   const followUpDays = State.settings.followUpDays || 0;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr(new Date());
 
   State.all.forEach(app => {
     const lastTs    = app.history?.slice(-1)[0]?.timestamp || app.applicationDate;
@@ -2287,14 +2684,17 @@ async function autoCleanReminder(app) {
 
 async function checkManualReminders() {
   if (!isPushActive()) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr(new Date());
   try {
     const pairs = await idbEntries(REMINDERS);
     for (const [, r] of pairs) {
       if (r.date > today) continue;
-      const fk = `jt-rem-fired-${r.id}-${today}`;
-      if (localStorage.getItem(fk)) continue;
-      localStorage.setItem(fk, '1');
+      // Ein Schlüssel pro Erinnerung, der das Datum als WERT trägt - vorher steckte
+      // das Datum im Schlüsselnamen, wodurch jeder Tag einen neuen Eintrag anlegte,
+      // der nie wieder gelöscht wurde.
+      const fk = `jt-rem-fired-${r.id}`;
+      if (localStorage.getItem(fk) === today) continue;
+      localStorage.setItem(fk, today);
       const app = State.all.find(a => a.id === r.appId);
       if (!app) { await deleteReminder(r.appId); continue; }
       fireNotification(`🔔 Erinnerung: ${app.company}`, r.note || `${app.position} - geplant für heute`, `reminder-${r.id}`, r.appId);
@@ -2306,7 +2706,7 @@ async function checkManualReminders() {
 // ── Weekly Summary ─────────────────────────────────────────────────────────────
 function checkWeeklySummary() {
   if (!isPushActive() || !State.settings.weeklySummary) return;
-  const key = 'jt-weekly-summary'; const today = new Date().toISOString().slice(0, 10);
+  const key = 'jt-weekly-summary'; const today = localDateStr(new Date());
   if (new Date().getDay() !== 1 || localStorage.getItem(key) === today) return;
   localStorage.setItem(key, today);
   const offene = State.all.filter(a => getStatusKind(a.status) === 'open').length;
@@ -2642,6 +3042,11 @@ async function renameStatus(idx, rawName) {
     State.statusFilterHidden.add(newName);
     saveStatusFilterHidden();
   }
+  if (State.kanbanHiddenCols.has(oldName)) {
+    State.kanbanHiddenCols.delete(oldName);
+    State.kanbanHiddenCols.add(newName);
+    saveKanbanHiddenCols();
+  }
 
   injectStatusStyles();
   await loadAll();
@@ -2678,6 +3083,7 @@ async function deleteStatus(idx) {
 
   State.statuses.splice(idx, 1);
   saveStatuses();
+  if (State.kanbanHiddenCols.delete(target.name)) saveKanbanHiddenCols();
   delete State.settings.staleThreshold?.[target.name];
   delete State.settings.pushOnStatus?.[target.name];
   delete State.kanbanSort?.[target.name];
@@ -2710,6 +3116,12 @@ function moveStatus(idx, dir) {
 // not hardcoded here - app.js ships static to every user, so a value baked in at build
 // time would leak into the public source and only work for one Google Cloud project.
 const GD_LS_CLIENT_ID = 'jt-gd-client-id';
+// Zeitpunkt des letzten erfolgreichen Uploads. Notwendig, weil der frühere Vergleich
+// "neuester updatedAt der Bewerbungen" gegen "modifiedTime der Drive-Datei" nach jedem
+// Upload zwangsläufig zugunsten von Drive ausging - die Datei wird ja NACH der letzten
+// Bearbeitung geschrieben. Ergebnis war bei jedem weiteren Sync ohne lokale Änderung
+// die Rückfrage "Drive-Backup ist neuer - herunterladen?".
+const GD_LS_LAST_SYNC = 'jt-gd-last-sync';
 const GD_LS_API_KEY   = 'jt-gd-api-key';
 function gdGetClientId() { return localStorage.getItem(GD_LS_CLIENT_ID) || ''; }
 function gdGetApiKey()   { return localStorage.getItem(GD_LS_API_KEY) || ''; }
@@ -2824,8 +3236,10 @@ function _gdEnsureToken() {
         resolve();
       }
     };
-    gapi.client.setToken(null); // force fresh prompt
-    _gdTokenClient.requestAccessToken({ prompt: 'consent' });
+    // prompt:'consent' NUR beim ersten Mal - danach reicht die stille Erneuerung.
+    // Sonst erscheint bei jedem einzelnen Sync erneut der Zustimmungsbildschirm.
+    const alreadyGranted = localStorage.getItem(GD_LS_LAST_SYNC);
+    _gdTokenClient.requestAccessToken({ prompt: alreadyGranted ? '' : 'consent' });
   });
 }
 
@@ -2851,6 +3265,7 @@ async function _gdRunSync() {
   // 3. No remote backup → just upload
   if (!remoteFile) {
     await _gdUpload(null, localData);
+    localStorage.setItem(GD_LS_LAST_SYNC, String(Date.now()));
     toast('Backup auf Google Drive erstellt ✓', 'success');
     _gdUpdateStatus('synced');
     return;
@@ -2858,6 +3273,24 @@ async function _gdRunSync() {
 
   // 4. Compare timestamps
   const remoteTs = new Date(remoteFile.modifiedTime).getTime();
+  // Wurde die Drive-Datei seit unserem letzten eigenen Upload nicht angefasst, stammt
+  // sie von genau diesem Gerät - dann ist nur interessant, ob es lokal seither neue
+  // Änderungen gab. Ohne diese Unterscheidung wäre Drive immer "neuer".
+  const lastSyncTs = Number(localStorage.getItem(GD_LS_LAST_SYNC)) || 0;
+  const remoteIsOurOwnUpload = lastSyncTs > 0 && Math.abs(remoteTs - lastSyncTs) < 60_000;
+  if (remoteIsOurOwnUpload) {
+    if (localTs <= lastSyncTs) {
+      toast('Google Drive Backup ist aktuell ✓', 'success');
+      _gdUpdateStatus('synced');
+      return;
+    }
+    await _gdUpload(remoteFile.id, localData);
+    localStorage.setItem(GD_LS_LAST_SYNC, String(Date.now()));
+    toast('Google Drive aktualisiert ✓', 'success');
+    _gdUpdateStatus('synced');
+    return;
+  }
+
   const diffSec  = Math.abs(localTs - remoteTs) / 1000;
 
   if (diffSec < 5) {
@@ -2875,6 +3308,7 @@ async function _gdRunSync() {
     );
     if (!overwrite) { toast('Sync abgebrochen.', 'info'); return; }
     await _gdUpload(remoteFile.id, localData);
+    localStorage.setItem(GD_LS_LAST_SYNC, String(Date.now()));
     toast('Google Drive erfolgreich überschrieben ✓', 'success');
     _gdUpdateStatus('synced');
   } else {
@@ -2892,7 +3326,9 @@ async function _gdRunSync() {
 
 /** Upload localData as JSON to appDataFolder; creates or updates the file */
 async function _gdUpload(existingFileId, data) {
-  const body    = JSON.stringify(data, null, 2);
+  // Gleicher Payload wie der JSON-Export: nur Bewerbungen hochzuladen hieß, dass
+  // Kategorien, Farben, Kanban-Reihenfolge und Termine im Drive-Backup gefehlt haben.
+  const body    = JSON.stringify(await buildBackupPayload(data), null, 2);
   const blob    = new Blob([body], { type: 'application/json' });
   const token   = _gdAccessToken;
 
@@ -2919,11 +3355,20 @@ async function _gdDownloadAndImport(fileId) {
     { headers: { Authorization: `Bearer ${_gdAccessToken}` } }
   );
   if (!resp.ok) throw new Error(`Download fehlgeschlagen: ${resp.status}`);
-  const data = await resp.json();
-  if (!Array.isArray(data)) throw new Error('Ungültiges Backup-Format in Google Drive.');
-  await idbClear(DB);
-  for (const app of data) await idbSet(app.id, app, DB);
+  const parsed = await resp.json();
+  // Ältere Backups sind ein reines Array von Bewerbungen - das muss lesbar bleiben.
+  const isArray = Array.isArray(parsed);
+  const rawApps = isArray ? parsed : parsed?.applications;
+  if (!Array.isArray(rawApps)) throw new Error('Ungültiges Backup-Format in Google Drive.');
+  const apps = normalizeImportedApps(rawApps);
+  await applyImportedData({
+    apps,
+    events:    isArray ? undefined : parsed.events,
+    reminders: isArray ? undefined : parsed.reminders,
+  });
+  if (!isArray) applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
   await loadAll();
+  await loadEvents();
 }
 
 /** Build and send a multipart/related request (metadata + media) */
@@ -3062,6 +3507,18 @@ const QR_SYNC_HEADER_BYTES     = 12;
 const QR_SYNC_CHUNK_PAYLOAD_BYTES = 700;
 const QR_SYNC_FRAME_INTERVAL_MS   = 220; // ~4.5 Frames/Sek. - zuverlässig scanbar
 const QR_SYNC_MAX_LOOP_MS = 5 * 60 * 1000; // Sicherheits-Stop, falls der Nutzer das Modal vergisst
+const QR_SEND_CANVAS_PX   = 320; // Ziel-Kantenlänge der Bitmap; die Anzeigegröße macht das CSS
+
+/** Kleinste QR-Version, die den GRÖSSTEN Chunk fasst - einmal bestimmt und dann für
+ *  alle Frames verwendet, damit der angezeigte Code seine Größe nicht ändert.
+ *  getModuleCount() = 4 * Version + 17, daraus lässt sich die Version zurückrechnen. */
+function _qrTypeNumberFor(chunks) {
+  const largest = chunks.reduce((a, b) => (b.length > a.length ? b : a), chunks[0]);
+  const probe = qrcode(0, 'M');
+  probe.addData(String.fromCharCode(...largest), 'Byte');
+  probe.make();
+  return (probe.getModuleCount() - 17) / 4;
+}
 
 // ─── Reine, testbare Helfer ─────────────────────────────────────────────────────
 
@@ -3188,6 +3645,33 @@ function _qrSummarizeMerge(beforeApps, mergedApps) {
   return { added, updated, deleted };
 }
 
+// Payload einer Sync-Übertragung. Der Statuskatalog MUSS mit, sonst behält das
+// Zielgerät seine eigenen Farben und beide Geräte sehen unterschiedlich aus.
+//
+// Wichtig: QR_SYNC_SCHEMA_VERSION bleibt dabei auf 1. Der Empfänger lehnt eine
+// abweichende Version komplett ab - ein Gerät, das die App noch nicht neu geladen hat,
+// könnte sonst gar nicht mehr syncen. Zusätzliche optionale Felder sind dagegen
+// abwärtskompatibel: ein alter Empfänger liest weiter nur `apps` und ignoriert den
+// Rest. Die Version wird erst bei einer echten Breaking Change hochgezählt.
+function _qrBuildSyncPayload(apps, statuses, kanbanSort) {
+  return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort };
+}
+
+/** Gegenstück zu _qrBuildSyncPayload(); wirft bei fremdem/kaputtem Inhalt.
+ *  statuses/kanbanSort fehlen bei Codes eines noch nicht aktualisierten Geräts -
+ *  dann bleibt der lokale Katalog einfach unangetastet. */
+function _qrReadSyncPayload(parsed) {
+  if (!parsed || parsed.v !== QR_SYNC_SCHEMA_VERSION || !Array.isArray(parsed.apps)) {
+    throw new Error('Unbekanntes oder inkompatibles Sync-Format');
+  }
+  return {
+    apps:       parsed.apps,
+    statuses:   Array.isArray(parsed.statuses) ? parsed.statuses : [],
+    kanbanSort: (parsed.kanbanSort && typeof parsed.kanbanSort === 'object' && !Array.isArray(parsed.kanbanSort))
+      ? parsed.kanbanSort : {},
+  };
+}
+
 // ─── Vendor-Libraries (lazy geladen, wie _ensureXLSX()) ─────────────────────────
 let _qrLibsReady = null;
 function _ensureQRLibs() {
@@ -3221,13 +3705,20 @@ async function openQRSendModal() {
   const apps  = pairs.map(([, v]) => v);
   if (!apps.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
 
-  const json  = JSON.stringify({ v: QR_SYNC_SCHEMA_VERSION, apps });
+  const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort));
   const raw   = new TextEncoder().encode(json);
   const { bytes, gzipped } = await _gzipBytes(raw);
   const sessionId = Math.floor(Math.random() * 65536);
   const chunks = _qrBuildChunks(bytes, sessionId, gzipped);
 
-  _qrSend = { chunks, frameIndex: 0, startedAt: Date.now(), timer: null };
+  // Alle Frames auf DIESELBE QR-Version festnageln. Mit qrcode(0,…) sucht die
+  // Bibliothek je Chunk die kleinstmögliche Version - der letzte Chunk ist kürzer als
+  // die anderen und bekam dadurch deutlich weniger Module. Gemessen bei 3 Chunks:
+  // 105 Module (339px) für die vollen, 45 Module (318px) für den Rest. Der Code sprang
+  // also bei jedem Durchlauf in der Größe, und der Dialog samt Schließen-X und
+  // "Fertig"-Button ist mitgewandert.
+  const typeNumber = _qrTypeNumberFor(chunks);
+  _qrSend = { chunks, typeNumber, frameIndex: 0, startedAt: Date.now(), timer: null };
   document.getElementById('qr-send-count').textContent = `${apps.length} Einträge - ${chunks.length} Code${chunks.length === 1 ? '' : 's'}`;
   showModal('qr-send-modal');
   _qrRenderSendFrame();
@@ -3243,15 +3734,18 @@ function _qrRenderSendFrame() {
   }
   const chunk = _qrSend.chunks[_qrSend.frameIndex % _qrSend.chunks.length];
   const binaryString = String.fromCharCode(...chunk);
-  const qr = qrcode(0, 'M');
+  const qr = qrcode(_qrSend.typeNumber, 'M');
   qr.addData(binaryString, 'Byte');
   qr.make();
 
   const canvas = document.getElementById('qr-send-canvas');
   const n = qr.getModuleCount();
-  const scale = Math.max(3, Math.floor(280 / n));
   const quiet = 4;
-  const size = (n + quiet * 2) * scale;
+  const modules = n + quiet * 2;
+  // n ist über alle Frames gleich (feste Version, siehe openQRSendModal), damit bleibt
+  // auch die Bitmap-Größe konstant. Die Anzeigegröße legt zusätzlich das CSS fest.
+  const scale = Math.max(2, Math.floor(QR_SEND_CANVAS_PX / modules));
+  const size = modules * scale;
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ffffff';
@@ -3362,25 +3856,27 @@ async function _qrFinishScan(total) {
   const text = new TextDecoder().decode(raw);
   let parsed;
   try { parsed = JSON.parse(text); } catch { throw new Error('Kein gültiger Sync-Code'); }
-  if (!parsed || parsed.v !== QR_SYNC_SCHEMA_VERSION || !Array.isArray(parsed.apps)) {
-    throw new Error('Unbekanntes oder inkompatibles Sync-Format');
-  }
+  const incoming = _qrReadSyncPayload(parsed);
 
   const localPairs = await idbEntries(DB);
   const localApps  = localPairs.map(([, v]) => v);
-  const merged  = mergeApps(localApps, parsed.apps, _qrScan.conflictRule);
+  const merged  = mergeApps(localApps, normalizeImportedApps(incoming.apps), _qrScan.conflictRule);
   const summary = _qrSummarizeMerge(localApps, merged);
+  // Statuskatalog wird erst beim Übernehmen geschrieben (_qrCommitScan), nicht hier -
+  // die Vorschau darf lokal noch nichts verändern.
+  const catalogAdds = mergeStatusCatalog(State.statuses, incoming.statuses)
+    .filter(s => !State.statuses.some(o => o.name.toLowerCase() === s.name.toLowerCase()));
 
   // Bewusst noch KEIN idbSet() hier - erst eine Vorschau zeigen und den Nutzer aktiv
   // bestätigen lassen (_qrCommitScan()), bevor sich lokal überhaupt etwas ändert. Ein
   // korrekt gescannter/entschlüsselter Code allein reicht nicht als Freigabe.
   _qrStopCamera();
-  _qrScan.pending = { merged, summary, beforeApps: localApps };
+  _qrScan.pending = { merged, summary, beforeApps: localApps, incoming, catalogAdds };
   document.getElementById('qr-scan-live').classList.add('hidden');
   document.getElementById('qr-scan-result').classList.remove('hidden');
   document.getElementById('qr-scan-cancel-btn').textContent = 'Verwerfen';
   document.getElementById('qr-scan-commit-btn').classList.remove('hidden');
-  _qrRenderResultSummary(summary, 'Bereit zum Übernehmen:');
+  _qrRenderResultSummary(summary, 'Bereit zum Übernehmen:', catalogAdds);
 }
 
 /** Einzige Stelle, die beim Geräte-Sync tatsächlich idbSet() aufruft - erst nach
@@ -3388,8 +3884,12 @@ async function _qrFinishScan(total) {
 async function _qrCommitScan() {
   const pending = _qrScan?.pending;
   if (!pending) return;
-  const { merged, summary, beforeApps } = pending;
+  const { merged, summary, beforeApps, incoming } = pending;
   for (const app of merged) await idbSet(app.id, app, DB);
+  // Statuskategorien und Kanban-Reihenfolge des sendenden Geräts übernehmen, damit
+  // beide Geräte danach wirklich gleich aussehen. Zusammenführen statt ersetzen:
+  // eigene Kategorien des Zielgeräts bleiben erhalten.
+  applyIncomingCatalog(incoming?.statuses, incoming?.kanbanSort);
   await loadAll();
 
   document.getElementById('qr-scan-commit-btn').classList.add('hidden');
@@ -3426,11 +3926,14 @@ async function _qrUndoSync(beforeMap, summary) {
 }
 
 /** Rendert die Zusammenfassung (mit optionalem Vorschau-Präfix) + aufklappbare Details. */
-function _qrRenderResultSummary(summary, prefix) {
+function _qrRenderResultSummary(summary, prefix, catalogAdds = []) {
   const parts = [];
   if (summary.added.length)   parts.push(`${summary.added.length} neu`);
   if (summary.updated.length) parts.push(`${summary.updated.length} aktualisiert`);
   if (summary.deleted.length) parts.push(`${summary.deleted.length} gelöscht`);
+  // Der Statuskatalog wird beim Übernehmen mit angepasst - das gehört sichtbar in die
+  // Vorschau, sonst ändern sich hinterher unerwartet Farben und Spalten.
+  if (catalogAdds.length) parts.push(`${catalogAdds.length} neue Statuskategorie${catalogAdds.length === 1 ? '' : 'n'}`);
   const text = parts.length ? parts.join(' · ') : 'Keine Änderungen - beide Geräte waren bereits auf demselben Stand';
   document.getElementById('qr-scan-result-summary').textContent = prefix ? `${prefix} ${text}` : text;
 
@@ -3489,25 +3992,31 @@ function closeQRScanModal() {
   document.getElementById('qr-scan-result-hint').textContent = 'Noch nicht gespeichert - erst nach "Übernehmen" ändert sich lokal etwas.';
 }
 
-// ─── Share Target ─────────────────────────────────────────────────────────────
-function handleShareTarget() {
-  const p = new URLSearchParams(location.search);
-  const url = p.get('url') || p.get('text');
-  const action = p.get('action');
-  if (url) {
-    navigate('applications');
-    openForm();
-    setTimeout(() => { document.getElementById('f-platform').value = url; }, 200);
-  }
-  if (action === 'new') {
-    navigate('applications');
-    setTimeout(() => openForm(), 300);
-  }
-}
-
 // ─── Keyboard ─────────────────────────────────────────────────────────────────
+// Escape schließt den obersten offenen Dialog. Reihenfolge zählt: der Confirm-Dialog
+// liegt über allem anderen und muss zuerst drankommen, sonst räumt Escape das Modal
+// darunter weg, während der Aufrufer noch auf die Antwort wartet.
+// closeQRScanModal()/closeQRSendModal() stoppen dabei Kamera bzw. Frame-Timer - ohne
+// sie lief die Kamera nach einem Escape einfach weiter.
+function _closeTopmostModal() {
+  if (isConfirmOpen()) { _settleConfirm(false); return true; }
+  const closers = [
+    ['qr-scan-modal',       closeQRScanModal],
+    ['qr-send-modal',       closeQRSendModal],
+    ['gd-credentials-modal', () => hideModal('gd-credentials-modal')],
+    ['reminder-modal',      () => hideModal('reminder-modal')],
+    ['event-modal',         closeEventModal],
+    ['ios-install-modal',   dismissInstallModal],
+    ['form-modal',          closeForm],
+    ['detail-modal',        closeDetail],
+  ];
+  for (const [id, close] of closers) {
+    if (!document.getElementById(id)?.classList.contains('hidden')) { close(); return true; }
+  }
+  return false;
+}
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeForm(); closeDetail(); }
+  if (e.key === 'Escape') _closeTopmostModal();
   if ((e.ctrlKey || e.metaKey) && e.key === 'n') { e.preventDefault(); navigate('applications'); openForm(); }
 });
 
@@ -3749,6 +4258,14 @@ if ('serviceWorker' in navigator) {
   // like they already had data by the time the onboarding check below runs.
   const _hadDataBeforeSeed = State.all.length > 0;
   try {
+    // Erst NACH loadAll(), sonst ist State.all noch leer und der Aufräumer würde
+    // sämtliche Schlüssel für verwaist halten.
+    const pairs = await idbEntries(DB);
+    cleanupOrphanedNotificationKeys(new Set(pairs.map(([id]) => id)));
+  } catch (err) {
+    console.error('[cleanupOrphanedNotificationKeys]', err);
+  }
+  try {
     await maybeSeedDemoData();
   } catch (err) {
     console.error('[maybeSeedDemoData]', err); // Demo-Daten sind optional, dürfen den Start nicht blockieren
@@ -3762,7 +4279,6 @@ if ('serviceWorker' in navigator) {
   navigate('dashboard');
   await checkPersistence();
   checkBackupReminder();
-  handleShareTarget();
   renderSettingsNotifications();
   renderStatusSettings();
   renderSkinButtons();

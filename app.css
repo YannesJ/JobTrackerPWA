@@ -844,6 +844,19 @@ html.blur-salary .jt-money {
 /* Ein-/ausblendbare Spalten (Spalten-Popover): applyTableColumnVisibility() in app.js
    setzt data-hide-cols auf .table-wrap als leerzeichengetrennte Liste ausgeblendeter
    Spalten-Keys - eine Regel pro Spalte trifft dann sowohl th als auch td. */
+/* .hide-sm/.hide-md waren bis hierher rein JS-gesteuert (applyCssHideClasses() setzte
+   Inline-Styles). Das lief aber nur beim Laden und bei einem Breakpoint-Wechsel -
+   renderTable() baut das <tbody> neu, die frischen <td> hatten den Inline-Style dann
+   nicht mehr, die <th> im statischen HTML dagegen schon. Zwischen 641px und 900px
+   waren dadurch 5 Kopfzellen ausgeblendet und 10 Datenzellen sichtbar: die Spalten
+   verrutschten. Als CSS-Regel kann das nicht mehr auseinanderlaufen. */
+@media (max-width: 900px) {
+  .hide-md { display: none !important; }
+}
+@media (max-width: 640px) {
+  .hide-sm { display: none !important; }
+}
+
 .table-wrap[data-hide-cols~="position"]        [data-col="position"],
 .table-wrap[data-hide-cols~="status"]          [data-col="status"],
 .table-wrap[data-hide-cols~="source"]          [data-col="source"],
@@ -1138,10 +1151,15 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 @property --qr-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .qr-glow canvas {
   display: block;
-  /* Modul-Anzahl (und damit die Pixelgröße) hängt von der Datenmenge ab - auf
-     schmalen Handy-Viewports nie breiter als der verfügbare Platz im Modal. */
-  max-width: 100%;
+  /* Feste Anzeigegröße statt "so groß wie die Bitmap gerade ist": die Modul-Anzahl
+     hängt an der Datenmenge, dadurch wanderten Schließen-X und "Fertig"-Button bei
+     jedem Frame-Wechsel mit. Das Layout darf nicht an der Bitmap hängen. */
+  width: min(280px, 100%);
+  aspect-ratio: 1 / 1;
   height: auto;
+  /* Beim Hochskalieren harte Modulkanten behalten - weichgezeichnete Ränder machen
+     den Code für die Kamera der Gegenseite schlechter lesbar. */
+  image-rendering: pixelated;
   border-radius: calc(var(--r-lg) - 4px);
   background: #fff;
   box-shadow: 0 2px 14px rgb(0 0 0 / .12);
@@ -2735,6 +2753,8 @@ body { -webkit-overflow-scrolling: auto; }
 
 /* Drag handle */
 .kc-handle {
+  /* Am Anfasser darf der Browser nicht scrollen - hier gehoert die Geste dem Drag. */
+  touch-action: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3025,3 +3045,33 @@ body { -webkit-overflow-scrolling: auto; }
 /* Bell button: accent when reminder is set */
 #d-bell-btn { transition: color var(--t-fast); }
 #d-bell-btn:hover { color: var(--accent-text) !important; }
+
+
+/* Hinweis in der Kanban-Werkzeugleiste, wenn das Board nicht alle Spalten zeigt -
+   eine ausgeblendete Spalte soll nicht wie verlorene Daten wirken. */
+.kanban-hidden-hint {
+  font-size: .72rem;
+  color: var(--text-muted);
+  align-self: center;
+  padding: .15rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.kanban-hidden-hint.hidden { display: none; }
+
+
+/* Design- und Gehalts-Schalter stehen nebeneinander am Fuss der Sidebar, nur als
+   Icon. Sie teilen sich die Breite, damit die Reihe ruhig wirkt. */
+.sidebar-toggles {
+  display: flex;
+  gap: 6px;
+}
+.sidebar-toggles .theme-toggle--icon {
+  flex: 1;
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+/* In der eingeklappten Sidebar ist ohnehin nur Platz fuer eine Spalte. */
+#app.sidebar-collapsed .sidebar-toggles { flex-direction: column; }

@@ -197,9 +197,14 @@ function loadAppContext() {
   // the tests below can read them as ctx.NAME.
   const exported = vm.runInContext(
     `({ TABLE_COLUMNS, DEFAULT_TABLE_COLUMNS, State, JOB_PORTALS, DEFAULT_STATUSES,
-        fmtEuro, fmtEuroShort, daysSince, escHtml, uuid, starsHTML, loadTableColumns,
+        fmtEuro, fmtEuroShort, daysSince, escHtml, escJs, uuid, starsHTML, loadTableColumns,
         nextEventForApp, localDateStr,
+        STATUS_KINDS, sanitizeStatuses, sanitizeKanbanSort, mergeStatusCatalog,
+        statusSlot, getStatusColor, getStatusKind, sortAppsForKanban,
+        parseDelimitedText, buildCsvRows, spreadsheetRowsToApplications,
+        normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
+        _qrBuildSyncPayload, _qrReadSyncPayload,
         _gzipBytes, _gunzipBytes })`,
     sandbox
   );
@@ -384,16 +389,25 @@ test('no em/en dashes in user-facing source files (project convention: use "-")'
   }
 });
 
-test('sw.js APP_SHELL_URLS only lists files that actually exist', () => {
+// sw.js listet seine Dateien in zwei Gruppen: APP_CODE (network-first, aendert sich
+// mit jedem Deploy) und APP_ASSETS (cache-first, unveraenderlich).
+function swShellPaths() {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-  const match = sw.match(/APP_SHELL_URLS\s*=\s*\[([\s\S]*?)\];/);
-  assert.ok(match, 'could not find APP_SHELL_URLS in sw.js');
-  const urls = [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const group = (name) => {
+    const m = sw.match(new RegExp(`${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`));
+    assert.ok(m, `could not find ${name} in sw.js`);
+    return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+  };
+  return [...group('APP_CODE'), ...group('APP_ASSETS')];
+}
+
+test('sw.js precacht nur Dateien, die es wirklich gibt', () => {
+  const urls = swShellPaths();
   assert.ok(urls.length > 5);
-  for (const url of urls) {
-    if (url === '/') continue;
-    const p = path.join(ROOT, url.replace(/^\//, ''));
-    assert.ok(fs.existsSync(p), `sw.js precaches a URL with no matching file: ${url}`);
+  for (const u of urls) {
+    if (u === './') continue;
+    assert.ok(fs.existsSync(path.join(ROOT, u.replace(/^\.\//, ''))),
+      `sw.js precaches a URL with no matching file: ${u}`);
   }
 });
 
@@ -551,6 +565,219 @@ if (ctx) {
     assert.deepStrictEqual(Array.from(restored), Array.from(original));
   });
 }
+
+// ─── Escaping: Ausbruch aus Inline-Handlern ────────────────────────────────────
+if (ctx) {
+  test('escJs escaped & zuerst, damit HTML-Entities nicht aus dem JS-String ausbrechen', () => {
+    // Attributwerte werden vom Browser HTML-entschlüsselt, BEVOR der Inhalt als JS
+    // geparst wird. Bliebe & stehen, würde ein Statusname "&apos;" nach dem
+    // Entschlüsseln zu ' und damit aus dem einfach gequoteten String ausbrechen.
+    assert.strictEqual(ctx.escJs('&apos;'), '&amp;apos;');
+    assert.ok(!/(^|[^&])&apos;/.test(ctx.escJs("&apos;+alert(1)+&apos;")));
+    // Die bisherigen Zusicherungen müssen erhalten bleiben
+    assert.strictEqual(ctx.escJs("O'Brien"), "O\\'Brien");
+    assert.strictEqual(ctx.escJs('a\\b'), 'a\\\\b');
+  });
+
+  test('isSafeLinkHref lässt nur harmlose Schemata durch', () => {
+    assert.ok(ctx.isSafeLinkHref('https://example.com/job/1'));
+    assert.ok(ctx.isSafeLinkHref('http://example.com'));
+    assert.ok(ctx.isSafeLinkHref('mailto:hr@example.com'));
+    assert.ok(ctx.isSafeLinkHref('example.com/stelle'), 'schemalose Eingabe bleibt nutzbar');
+    assert.ok(!ctx.isSafeLinkHref('javascript:alert(1)'));
+    assert.ok(!ctx.isSafeLinkHref('  JaVaScRiPt:alert(1)'), 'Groß-/Kleinschreibung und Leerraum');
+    assert.ok(!ctx.isSafeLinkHref('data:text/html,<script>alert(1)</script>'));
+    assert.ok(!ctx.isSafeLinkHref(''));
+  });
+}
+
+// ─── CSV/Excel: verlustfreier Round-Trip ───────────────────────────────────────
+if (ctx) {
+  const CSV_DELIM = ';';
+
+  test('parseDelimitedText liest Zeilenumbrüche innerhalb von Anführungszeichen als EIN Feld', () => {
+    const text = 'Firma;Notizen\r\n"Acme";"Zeile 1\nZeile 2"\r\n"Beta";"schlicht"';
+    const rows = ctx.parseDelimitedText(text, CSV_DELIM);
+    assert.strictEqual(rows.length, 3, 'Kopfzeile + 2 Datensätze');
+    assert.deepStrictEqual(Array.from(rows[1]), ['Acme', 'Zeile 1\nZeile 2']);
+    assert.deepStrictEqual(Array.from(rows[2]), ['Beta', 'schlicht']);
+  });
+
+  test('parseDelimitedText behandelt verdoppelte Anführungszeichen und Trennzeichen im Feld', () => {
+    const rows = ctx.parseDelimitedText('"a";"sag ""hallo""";"x;y"', CSV_DELIM);
+    assert.deepStrictEqual(Array.from(rows[0]), ['a', 'sag "hallo"', 'x;y']);
+  });
+
+  test('CSV-Round-Trip: Notiz mit Umbruch, Semikolon und Anführungszeichen überlebt', () => {
+    const notes = 'Erste Zeile\nZweite; mit Semikolon und "Zitat"';
+    ctx.State.statuses = ctx.sanitizeStatuses([{ name: 'Offen', color: '#ff00aa', kind: 'open' }]);
+    ctx.State.kanbanSort = {};
+    ctx.State.all = [];
+    const apps = [{
+      id: 'a1', company: 'Acme', position: 'Dev', status: 'Offen', source: 'LinkedIn',
+      applicationDate: '2026-08-01', expectedSalary: 60000, priority: 2,
+      rejectionReason: '', contactName: '', contactPhone: '', contactEmail: '',
+      platformLink: '', documentLink: '', notes,
+    }];
+    const csv = ctx.buildCsvRows(apps).join('\r\n');
+    const rows = ctx.parseDelimitedText(csv, CSV_DELIM);
+    const { apps: back } = ctx.spreadsheetRowsToApplications(rows);
+    assert.strictEqual(back.length, 1, 'ein Datensatz rein, einer raus');
+    assert.strictEqual(back[0].notes, notes);
+    assert.strictEqual(back[0].company, 'Acme');
+    assert.strictEqual(back[0].expectedSalary, 60000);
+    assert.strictEqual(back[0].priority, 2);
+  });
+
+  test('CSV-Export nimmt Statuskategorien OHNE Bewerbungen mit', () => {
+    // Sonst schrumpft der Katalog auf dem Zielgerät auf die tatsächlich benutzten
+    // Kategorien zusammen - und weil statusSlot() index-basiert ist, verschieben
+    // sich dadurch sämtliche Farben, nicht nur die der fehlenden Kategorien.
+    ctx.State.statuses = ctx.sanitizeStatuses([
+      { name: 'Offen',     color: '#ff00aa', kind: 'open' },
+      { name: 'Interview', color: '#00ccff', kind: 'interview' },
+      { name: 'Absage',    color: '#123456', kind: 'rejected' },
+      { name: 'Zusage',    color: '#abcdef', kind: 'accepted' },
+    ]);
+    ctx.State.kanbanSort = {};
+    ctx.State.all = [];
+    const apps = [{ id: 'a1', company: 'Acme', position: 'Dev', status: 'Offen', applicationDate: '2026-08-01' }];
+    const rows = ctx.parseDelimitedText(ctx.buildCsvRows(apps).join('\r\n'), CSV_DELIM);
+    const { apps: back, statuses } = ctx.spreadsheetRowsToApplications(rows);
+    assert.strictEqual(back.length, 1, 'Katalogzeilen ohne Firma zählen nicht als Bewerbung');
+    assert.deepStrictEqual(Array.from(statuses.map(s => s.name)), ['Offen', 'Interview', 'Absage', 'Zusage']);
+    assert.deepStrictEqual(Array.from(statuses.map(s => s.color)), ['#ff00aa', '#00ccff', '#123456', '#abcdef']);
+    assert.deepStrictEqual(Array.from(statuses.map(s => s.kind)), ['open', 'interview', 'rejected', 'accepted']);
+  });
+}
+
+// ─── Statuskatalog zusammenführen (alle Übertragungswege) ──────────────────────
+if (ctx) {
+  test('mergeStatusCatalog: eingehende Farbe gewinnt, lokal-eigene Kategorien bleiben', () => {
+    const local = [
+      { name: 'Offen',       color: '#111111', kind: 'open' },
+      { name: 'Eigene Spur', color: '#999999', kind: 'other' },
+    ];
+    const incoming = [
+      { name: 'Offen',     color: '#ff00aa', kind: 'open' },
+      { name: 'Interview', color: '#00ccff', kind: 'interview' },
+    ];
+    const merged = Array.from(ctx.mergeStatusCatalog(local, incoming));
+    assert.deepStrictEqual(merged.map(s => s.name), ['Offen', 'Interview', 'Eigene Spur']);
+    assert.strictEqual(merged[0].color, '#ff00aa', 'eingehende Farbe gewinnt');
+    assert.strictEqual(merged[2].color, '#999999', 'lokal-eigene Kategorie überlebt unverändert');
+  });
+
+  test('mergeStatusCatalog: leere/ungültige Eingaben lassen den lokalen Katalog stehen', () => {
+    const local = [{ name: 'Offen', color: '#111111', kind: 'open' }];
+    assert.deepStrictEqual(Array.from(ctx.mergeStatusCatalog(local, [])).map(s => s.name), ['Offen']);
+    assert.deepStrictEqual(Array.from(ctx.mergeStatusCatalog(local, null)).map(s => s.name), ['Offen']);
+    assert.deepStrictEqual(Array.from(ctx.mergeStatusCatalog(local, [{ name: '  ' }])).map(s => s.name), ['Offen']);
+  });
+
+  test('sanitizeStatuses fängt kaputte Farben, Namen und Zähl-Kinder ab', () => {
+    const out = Array.from(ctx.sanitizeStatuses([
+      { name: '  Offen  ', color: 'nicht-hex', kind: 'quatsch' },
+      { name: '', color: '#ffffff', kind: 'open' },
+      null,
+      { name: 'Neu', color: '#ABCDEF', kind: 'interview' },
+    ]));
+    assert.strictEqual(out.length, 2, 'namenlose und null-Einträge fliegen raus');
+    assert.strictEqual(out[0].name, 'Offen', 'Name wird getrimmt');
+    assert.strictEqual(out[0].color, '#3b82f6', 'unbekannte Farbe fällt auf den Standard des Namens zurück');
+    assert.strictEqual(out[0].kind, 'open', 'unbekanntes kind wird aus dem Namen abgeleitet');
+    assert.strictEqual(out[1].color, '#ABCDEF');
+  });
+
+  test('sanitizeKanbanSort verwirft Müll und behält gültige Einträge', () => {
+    const out = ctx.sanitizeKanbanSort({
+      Offen:     { col: 'custom', dir: 'asc', order: ['a', 1, null, 'b'] },
+      Interview: { col: 'applicationDate', dir: 'kaputt' },
+      Absage:    { col: 42 },
+      Zusage:    null,
+    });
+    assert.deepStrictEqual(Array.from(out.Offen.order), ['a', 'b'], 'nur String-IDs bleiben');
+    assert.strictEqual(out.Interview.dir, 'asc', 'ungültige Richtung fällt auf asc zurück');
+    assert.ok(!('Absage' in out) && !('Zusage' in out));
+  });
+}
+
+// ─── Kanban: eigene Reihenfolge ────────────────────────────────────────────────
+if (ctx) {
+  test('sortAppsForKanban mit col:custom hält die Reihenfolge und hängt Unbekanntes hinten an', () => {
+    ctx.State.kanbanSort = { Offen: { col: 'custom', dir: 'asc', order: ['c', 'a'] } };
+    const apps = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const sorted = Array.from(ctx.sortAppsForKanban(apps, 'Offen')).map(a => a.id);
+    assert.deepStrictEqual(sorted, ['c', 'a', 'b']);
+  });
+}
+
+// ─── Import: Altformate müssen weiter lesbar bleiben ───────────────────────────
+if (ctx) {
+  test('normalizeImportedApps akzeptiert das alte reine Array-Format', () => {
+    const out = Array.from(ctx.normalizeImportedApps([{ id: 'x1', company: 'Acme' }]));
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].id, 'x1');
+  });
+
+  test('normalizeImportedApps vergibt fehlende IDs, statt beim Schreiben zu scheitern', () => {
+    // Ohne das wirft idbSet MITTEN im Import - und zwar nachdem die DB schon
+    // geleert wurde, also mit Totalverlust als Ergebnis.
+    const out = Array.from(ctx.normalizeImportedApps([{ company: 'Ohne ID' }, { id: '', company: 'Leer' }]));
+    assert.strictEqual(out.length, 2);
+    assert.ok(out.every(a => typeof a.id === 'string' && a.id.length > 0));
+    assert.notStrictEqual(out[0].id, out[1].id);
+  });
+
+  test('normalizeImportedApps wirft Einträge ohne Firma und Nicht-Objekte weg', () => {
+    const out = Array.from(ctx.normalizeImportedApps([null, 'text', 42, { position: 'nur Position' }, { company: 'Gut' }]));
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].company, 'Gut');
+  });
+}
+
+// ─── QR-Sync: Payload trägt den Statuskatalog mit ──────────────────────────────
+if (ctx) {
+  test('_qrBuildSyncPayload nimmt Statuskatalog und Kanban-Sortierung mit', () => {
+    const statuses = ctx.sanitizeStatuses([{ name: 'Offen', color: '#ff00aa', kind: 'open' }]);
+    const payload = ctx._qrBuildSyncPayload([{ id: 'a1', company: 'Acme' }], statuses, { Offen: { col: 'custom', dir: 'asc', order: ['a1'] } });
+    assert.strictEqual(payload.v, 1, 'Schemaversion bleibt 1 - zusätzliche Felder sind abwärtskompatibel');
+    assert.strictEqual(payload.apps.length, 1);
+    assert.strictEqual(payload.statuses[0].color, '#ff00aa');
+    assert.ok(payload.kanbanSort.Offen);
+  });
+
+  test('_qrReadSyncPayload liest auch einen alten Code ohne Statuskatalog', () => {
+    // Ein Gerät, das die App noch nicht neu geladen hat, sendet weiter { v:1, apps }.
+    const read = ctx._qrReadSyncPayload({ v: 1, apps: [{ id: 'a1', company: 'Acme' }] });
+    assert.strictEqual(read.apps.length, 1);
+    assert.deepStrictEqual(Array.from(read.statuses), []);
+    assert.deepStrictEqual({ ...read.kanbanSort }, {});
+  });
+
+  test('_qrReadSyncPayload lehnt fremde/kaputte Payloads ab', () => {
+    assert.throws(() => ctx._qrReadSyncPayload({ v: 99, apps: [] }));
+    assert.throws(() => ctx._qrReadSyncPayload({ v: 1 }));
+    assert.throws(() => ctx._qrReadSyncPayload(null));
+  });
+}
+
+// ─── Service Worker: Pfade müssen relativ zum Scope sein ───────────────────────
+test('sw.js precacht ausschließlich relative Pfade (Deploy liegt unter /JobTrackerPWA/)', () => {
+  const urls = swShellPaths();
+  assert.ok(urls.length > 5);
+  for (const u of urls) {
+    assert.ok(!u.startsWith('/'),
+      `sw.js precacht "${u}" absolut - auf GitHub Pages löst das auf die Domain-Wurzel statt auf /JobTrackerPWA/ auf, die Datei ist dort nicht erreichbar und der Service Worker installiert nie`);
+  }
+});
+
+test('app.js verlinkt Icons/URLs nicht absolut auf die Domain-Wurzel', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+  const hits = [...src.matchAll(/'(\/(?:icons|vendor)\/[^']*)'/g)].map(m => m[1]);
+  assert.deepStrictEqual(hits, [],
+    `absolute Pfade in app.js gefunden: ${hits.join(', ')} - unter /JobTrackerPWA/ zeigen die ins Leere`);
+});
 
 // ─── Report ──────────────────────────────────────────────────────────────────
 (async () => {

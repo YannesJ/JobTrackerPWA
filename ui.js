@@ -234,11 +234,19 @@ function renderCharts() {
   });
   const srcLabels = Object.keys(srcMap);
   destroyChart('source');
+  // Wie beim Absagen-Chart oben: der Leer-Zustand ersetzt den Inhalt des Wrappers, also
+  // muss das <canvas> danach wieder angelegt werden. Vorher wurde es nur zerstört - der
+  // Quellen-Chart blieb dann bis zum Reload verschwunden, etwa nach "Alle Daten löschen"
+  // und dem Anlegen einer neuen Bewerbung.
+  const srcWrap = document.getElementById('chart-source-wrap');
+  if (srcWrap) {
+    srcWrap.innerHTML = srcLabels.length
+      ? `<canvas id="chart-source"></canvas>`
+      : `<p style="font-size:.82rem;color:var(--text-muted);text-align:center;padding-top:3rem">Keine Quellen erfasst</p>`;
+  }
   const sCtx = document.getElementById('chart-source')?.getContext('2d');
   if (sCtx) {
-    if (!srcLabels.length) {
-      sCtx.canvas.parentElement.innerHTML = `<p style="font-size:.82rem;color:var(--text-muted);text-align:center;padding-top:3rem">Keine Quellen erfasst</p>`;
-    } else {
+    {
       Charts.source = new Chart(sCtx, {
         type: 'bar',
         data: {
@@ -428,12 +436,12 @@ function renderTable() {
           const dateStr = fmtDateTime(a.applicationDate);
           const cols    = State.tableColumns;
           return `
-          <div class="app-card" onclick="openDetail('${a.id}')">
+          <div class="app-card" onclick="openDetail('${escJs(a.id)}')">
             <div class="app-card-accent s-${statusSlot(a.status)}"></div>
             <div class="app-card-body">
               <div class="app-card-top">
                 <div class="app-card-company">
-                  ${stale ? '<span class="kanban-stale-dot" title="Offen &gt;14 Tage"></span>' : ''}
+                  ${stale ? '<span class="kanban-stale-dot" title="Seit ${daysSince(lastTs)} Tagen keine Änderung"></span>' : ''}
                   ${escHtml(a.company)}
                 </div>
                 <span class="badge ${statusClass(a.status)} app-card-badge">${escHtml(a.status)}</span>
@@ -447,10 +455,10 @@ function renderTable() {
               </div>
             </div>
             <div class="app-card-actions" onclick="event.stopPropagation()">
-              <button class="app-card-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern">
+              <button class="app-card-status-btn" onclick="showStatusMenu(event,'${escJs(a.id)}')" title="Status ändern" aria-label="Status ändern">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              <button class="app-card-menu-btn" onclick="toggleCardMenu(event,'${a.id}')" title="Weitere Aktionen" aria-label="Weitere Aktionen">
+              <button class="app-card-menu-btn" onclick="toggleCardMenu(event,'${escJs(a.id)}')" title="Weitere Aktionen" aria-label="Weitere Aktionen">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
               </button>
             </div>
@@ -469,15 +477,15 @@ function renderTable() {
     const stale  = threshold_d > 0 && daysSince(lastTs) > threshold_d;
     const nextEv = nextEventForApp(a.id);
     const nextEvLabel = nextEv ? `${fmtDateShort(nextEv.date)}${nextEv.time ? ` · ${escHtml(nextEv.time)}` : ''}` : '-';
-    return `<tr onclick="openDetail('${a.id}')">
+    return `<tr onclick="openDetail('${escJs(a.id)}')">
       <td class="td-primary" data-col="company">
-        ${stale ? '<span class="kanban-stale-dot" title="Offen seit &gt;14 Tagen"></span>' : ''}
+        ${stale ? '<span class="kanban-stale-dot" title="Seit ${daysSince(lastTs)} Tagen keine Änderung"></span>' : ''}
         ${escHtml(a.company)}
       </td>
       <td data-col="position" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.position)}</td>
       <td data-col="status">
         <div style="position:relative;display:inline-flex;" data-status-anchor>
-          <button class="status-pill" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern">
+          <button class="status-pill" onclick="showStatusMenu(event,'${escJs(a.id)}')" title="Status ändern">
             <span class="badge ${statusClass(a.status)}" style="pointer-events:none">${escHtml(a.status)}</span>
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;opacity:.6"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -491,8 +499,8 @@ function renderTable() {
       <td class="hide-md td-mono" data-col="nextEvent" style="font-size:0.78rem" title="${escAttr(nextEv?.title||'')}">${nextEvLabel}</td>
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
-          <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten" aria-label="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
-          <button class="btn btn-icon btn-sm" onclick="toggleCardMenu(event,'${a.id}')" title="Weitere Aktionen" aria-label="Weitere Aktionen"><i data-lucide="more-vertical" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="openForm('${escJs(a.id)}')" title="Bearbeiten" aria-label="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="toggleCardMenu(event,'${escJs(a.id)}')" title="Weitere Aktionen" aria-label="Weitere Aktionen"><i data-lucide="more-vertical" style="width:14px;height:14px"></i></button>
         </div>
       </td>
     </tr>`;
@@ -504,8 +512,14 @@ function renderTable() {
 
 // ─── Kanban ───────────────────────────────────────────────────────────────────
 // Spalten ergeben sich aus den individuell konfigurierbaren Status-Kategorien.
+// Spalten des Boards. Zwei Dinge blenden eine Spalte aus:
+//  - State.kanbanHiddenCols: bewusste Board-Einstellung des Nutzers
+//  - State.statusFilterHidden: der Status-Filter. Der entfernte die Karten bisher nur
+//    aus State.filtered, die Spalte selbst blieb als leere Geisterspalte stehen.
 function getKanbanCols() {
-  return State.statuses.map(s => ({ status: s.name, dot: s.color, label: s.name }));
+  return State.statuses
+    .filter(s => !State.kanbanHiddenCols.has(s.name) && !State.statusFilterHidden.has(s.name))
+    .map(s => ({ status: s.name, dot: s.color, label: s.name }));
 }
 
 const KANBAN_SORT_OPTIONS = [
@@ -526,7 +540,18 @@ function renderKanban() {
   document.getElementById('view-kanban').classList.remove('hidden');
 
   const board = document.getElementById('kanban-board');
-  board.innerHTML = getKanbanCols().map(({ status, dot, label }) => {
+  const cols  = getKanbanCols();
+  // Sichtbar machen, wenn das Board gerade nicht alles zeigt - sonst wirkt eine
+  // ausgeblendete Spalte wie verschwundene Daten.
+  const hiddenCount = State.statuses.length - cols.length;
+  const hint = document.getElementById('kanban-hidden-hint');
+  if (hint) {
+    hint.classList.toggle('hidden', hiddenCount === 0);
+    hint.textContent = hiddenCount === 1
+      ? '1 Spalte ausgeblendet'
+      : `${hiddenCount} Spalten ausgeblendet`;
+  }
+  board.innerHTML = cols.map(({ status, dot, label }) => {
     const colApps = sortAppsForKanban(State.filtered.filter(a => a.status === status), status);
     const ks = State.kanbanSort[status] || { col: 'applicationDate', dir: 'desc' };
     const currentSortLabel = KANBAN_SORT_OPTIONS.find(o => o.col===ks.col && o.dir===ks.dir)?.label || 'Sortierung';
@@ -542,14 +567,14 @@ function renderKanban() {
 
       return `<div class="kanban-card s-${statusSlot(status)}"
         draggable="true"
-        data-id="${a.id}"
-        ondragstart="onDragStart(event,'${a.id}')"
+        data-id="${escAttr(a.id)}"
+        ondragstart="onDragStart(event,'${escJs(a.id)}')"
         ondragend="onDragEnd(event)"
-        ontouchstart="onTouchStart(event,'${a.id}')"
+        ontouchstart="onTouchStart(event,'${escJs(a.id)}')"
         ontouchmove="onTouchMove(event)"
         ontouchend="onTouchEnd(event)"
-        onclick="openDetail('${a.id}')"
-        style="touch-action:none">
+        onclick="openDetail('${escJs(a.id)}')"
+        style="touch-action:pan-y">
         <!-- Drag handle + content -->
         <div class="kc-layout">
           <div class="kc-handle" title="Ziehen zum Verschieben" onclick="event.stopPropagation()">
@@ -577,7 +602,7 @@ function renderKanban() {
             <div class="kc-bottom">
               ${(kf.events && eventCount > 0) ? `<span class="kc-events">${eventCount} Ereignis${eventCount !== 1 ? 'se' : ''}</span>` : ''}
               <div style="position:relative;margin-left:auto" data-status-anchor>
-                <button class="kc-status-btn" onclick="showStatusMenu(event,'${a.id}')" title="Status ändern" aria-label="Status ändern">
+                <button class="kc-status-btn" onclick="showStatusMenu(event,'${escJs(a.id)}')" title="Status ändern" aria-label="Status ändern">
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
               </div>
@@ -632,7 +657,22 @@ function toggleKanbanSortMenu(e, status) {
     </div>`;
   }).join('');
 
-  btn.parentElement.appendChild(popover);
+  // Fixed am <body>, wie alle anderen Popover: eingebettet in die Spalte wurde es vom
+  // Overflow des Boards abgeschnitten (derselbe Grund wie beim Status-Popover).
+  popover.style.position   = 'fixed';
+  popover.style.visibility = 'hidden';
+  document.body.appendChild(popover);
+
+  const rect       = btn.getBoundingClientRect();
+  const popRect    = popover.getBoundingClientRect();
+  const margin     = 8;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < popRect.height + margin && rect.top > popRect.height + margin;
+  const left = Math.min(Math.max(rect.right - popRect.width, margin), window.innerWidth - popRect.width - margin);
+  popover.style.left       = `${left}px`;
+  popover.style.top        = `${openUpward ? rect.top - popRect.height - 4 : rect.bottom + 4}px`;
+  popover.style.right      = 'auto';
+  popover.style.visibility = '';
 }
 
 // ─── Kalender ─────────────────────────────────────────────────────────────────
@@ -683,7 +723,7 @@ function renderCalendarGrid() {
           const cls  = `s-${app ? statusSlot(app.status) : 0}`;
           const text = app ? app.company : ev.title;
           const tip  = (ev.time ? ev.time + ' · ' : '') + ev.title;
-          return `<div class="calendar-event-pill badge-dyn ${cls}" onclick="event.stopPropagation();openEventModal('${dStr}','${ev.id}')" title="${escAttr(tip)}">
+          return `<div class="calendar-event-pill badge-dyn ${cls}" onclick="event.stopPropagation();openEventModal('${dStr}','${escJs(ev.id)}')" title="${escAttr(tip)}">
             ${ev.time ? `<span class="calendar-event-time">${escHtml(ev.time)}</span>` : ''}${escHtml(text)}
           </div>`;
         }).join('')}
@@ -714,7 +754,7 @@ function renderUpcomingEvents() {
     const cls       = `s-${app ? statusSlot(app.status) : 0}`;
     const isToday   = ev.date === todayStr;
     const dateLabel = isToday ? 'Heute' : fmtDateShort(ev.date);
-    return `<div class="upcoming-item" onclick="openEventModal('${ev.date}','${ev.id}')">
+    return `<div class="upcoming-item" onclick="openEventModal('${escJs(ev.date)}','${escJs(ev.id)}')">
       <div class="stc-dot ${cls}"></div>
       <div class="upcoming-body">
         <div class="upcoming-title">${escHtml(ev.title)}</div>
@@ -725,17 +765,15 @@ function renderUpcomingEvents() {
   }).join('');
 }
 
-// Hide/show columns based on viewport; re-render table at mobile breakpoint
+// Beim Wechsel über 640px muss die Ansicht zwischen Desktop-Tabelle und mobiler
+// Kartenliste umgeschaltet werden - das kann nur JS. Das Ein-/Ausblenden einzelner
+// Spalten macht dagegen CSS (.hide-sm/.hide-md in app.css); vorher setzte diese
+// Funktion dafür Inline-Styles, die jedes renderTable() wieder verlor.
 const mq_sm = window.matchMedia('(max-width: 640px)');
-const mq_md = window.matchMedia('(max-width: 900px)');
 function applyCssHideClasses() {
-  document.querySelectorAll('.hide-sm').forEach(el => el.style.display = mq_sm.matches ? 'none' : '');
-  document.querySelectorAll('.hide-md').forEach(el => el.style.display = mq_md.matches ? 'none' : '');
-  // Switch table ↔ card-list when crossing 640px
   if (State.view === 'table' && document.getElementById('page-applications')?.classList.contains('active')) {
     renderTable();
   }
 }
 mq_sm.addEventListener('change', applyCssHideClasses);
-mq_md.addEventListener('change', applyCssHideClasses);
 window.addEventListener('load', applyCssHideClasses);
