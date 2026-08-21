@@ -1572,11 +1572,11 @@ async function exportCSV() {
   const data  = pairs.map(([,v]) => v);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
 
-  const cols = ['Firma','Position','Status','Quelle','Datum','Gehalt','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+  const cols = ['Firma','Position','Status','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = data.map(a => [
     esc(a.company), esc(a.position), esc(a.status), esc(a.source),
-    esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.rejectionReason),
+    esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
     esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
     esc(a.platformLink), esc(a.documentLink), esc(a.notes),
   ].join(';'));
@@ -1596,7 +1596,8 @@ async function exportCSV() {
 // unbekannte Spalten werden einfach ignoriert. Auch f\u00FCr den Info-Popover verwendet.
 const IMPORT_COL_MAP = {
   firma:'company', position:'position', status:'status', quelle:'source',
-  datum:'applicationDate', gehalt:'expectedSalary', absagegrund:'rejectionReason',
+  datum:'applicationDate', gehalt:'expectedSalary', priorität:'priority',
+  absagegrund:'rejectionReason',
   ansprechpartner:'contactName', telefon:'contactPhone', 'e-mail':'contactEmail',
   stellenanzeige:'platformLink', unterlagen:'documentLink', notizen:'notes',
 };
@@ -1667,6 +1668,7 @@ function spreadsheetRowsToApplications(rows) {
       if (!field) return;
       let val = String(vals[idx] ?? '');
       if (field === 'expectedSalary') val = Number(val.replace(/[^0-9]/g,'')) || null;
+      else if (field === 'priority') val = Math.min(3, Math.max(0, Number(val.replace(/[^0-9]/g,'')) || 0)) || null;
       else val = val.trim() || null;
       app[field] = val;
     });
