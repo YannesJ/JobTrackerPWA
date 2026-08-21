@@ -516,6 +516,9 @@ const KANBAN_SORT_OPTIONS = [
   { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
   { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
   { col:'priority',        dir:'desc', label:'Priorität ↓' },
+  // Wird auch automatisch aktiviert, sobald eine Karte per Drag&Drop innerhalb
+  // ihrer Spalte umsortiert wird - siehe _applyKanbanDrop() in app.js.
+  { col:'custom',          dir:'asc',  label:'Eigene Reihenfolge' },
 ];
 
 function renderKanban() {
@@ -541,6 +544,7 @@ function renderKanban() {
         draggable="true"
         data-id="${a.id}"
         ondragstart="onDragStart(event,'${a.id}')"
+        ondragend="onDragEnd(event)"
         ontouchstart="onTouchStart(event,'${a.id}')"
         ontouchmove="onTouchMove(event)"
         ontouchend="onTouchEnd(event)"

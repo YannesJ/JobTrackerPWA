@@ -938,6 +938,15 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   background: var(--accent-faint);
 }
 
+/* Einfüge-Linie beim Umsortieren einer Karte per Drag&Drop innerhalb einer Spalte
+   (siehe _updateKanbanDropIndicator() in app.js) - zeigt, wo die Karte landen würde. */
+.kanban-drop-indicator {
+  height: 3px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 .kanban-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);

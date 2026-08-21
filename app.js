@@ -430,12 +430,8 @@ const State = {
   filtered:[],
   view:    'table',
   sort:    { col: 'applicationDate', dir: 'desc' },
-  kanbanSort: {
-    Offen:     { col: 'applicationDate', dir: 'desc' },
-    Interview: { col: 'applicationDate', dir: 'desc' },
-    Absage:    { col: 'applicationDate', dir: 'desc' },
-    Zusage:    { col: 'applicationDate', dir: 'desc' },
-  },
+  // Sortierung je Kanban-Spalte (Datum/Firma/... oder 'custom' nach Drag&Drop-Umsortierung)
+  kanbanSort: loadKanbanSort(),
   theme:  localStorage.getItem('jt-theme') || 'light',
   skin:   localStorage.getItem('jt-skin') || 'neon',
   salaryBlur: localStorage.getItem('jt-salary-blur') === '1',
@@ -472,6 +468,20 @@ function loadSettings() {
 
 function saveSettings() {
   localStorage.setItem('jt-settings', JSON.stringify(State.settings));
+}
+
+// Kanban-Sortierung je Statusspalte: { col, dir } für eine Sortierspalte, oder
+// { col:'custom', dir:'asc', order:[id,...] } nach manuellem Umsortieren per
+// Drag&Drop innerhalb einer Spalte (siehe _applyKanbanDrop()).
+function loadKanbanSort() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-kanban-sort') || 'null');
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) return stored;
+  } catch { /* ignore malformed data */ }
+  return {};
+}
+function saveKanbanSort() {
+  localStorage.setItem('jt-kanban-sort', JSON.stringify(State.kanbanSort));
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -870,14 +880,35 @@ function sortApps() {
 }
 
 function sortKanbanCol(status, col, dir) {
-  State.kanbanSort[status] = { col, dir };
+  if (col === 'custom') {
+    // Beim manuellen Umschalten auf "Eigene Reihenfolge" die aktuell angezeigte
+    // Reihenfolge als Ausgangspunkt übernehmen, statt die Karten springen zu lassen.
+    const order = sortAppsForKanban(State.filtered.filter(a => a.status === status), status).map(a => a.id);
+    State.kanbanSort[status] = { col: 'custom', dir: 'asc', order };
+  } else {
+    State.kanbanSort[status] = { col, dir };
+  }
+  saveKanbanSort();
   // Close any open popover
   document.querySelectorAll('.sort-popover').forEach(p => p.remove());
   renderView();
 }
 
 function sortAppsForKanban(apps, status) {
-  const { col, dir } = State.kanbanSort[status] || { col: 'applicationDate', dir: 'desc' };
+  const ks = State.kanbanSort[status] || { col: 'applicationDate', dir: 'desc' };
+  if (ks.col === 'custom') {
+    const order = ks.order || [];
+    // Karten ohne (noch) bekannte Position - z.B. neu angelegt oder frisch in diese
+    // Spalte verschoben - landen stabil ans Ende, in ihrer bisherigen Reihenfolge.
+    return [...apps].sort((a, b) => {
+      const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+      if (ia === -1 && ib === -1) return 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }
+  const { col, dir } = ks;
   return [...apps].sort((a, b) => {
     let va = a[col] ?? '', vb = b[col] ?? '';
     if (col === 'applicationDate') { va = new Date(va); vb = new Date(vb); }
@@ -955,6 +986,8 @@ let dragId    = null;
 let _touchClone = null;
 let _touchSrc   = null;
 let _lastDropTarget = null;
+let _kanbanDropIndex = null; // Einfüge-Index (unter Karten der Zielspalte), von der Drop-Anzeige
+let _kanbanDropIndicatorEl = null;
 
 function onDragStart(e, id) {
   dragId = id;
@@ -964,6 +997,7 @@ function onDragStart(e, id) {
 function onDragOver(e) {
   e.preventDefault();
   e.currentTarget.classList.add('drag-over');
+  _updateKanbanDropIndicator(e.currentTarget, e.clientY);
 }
 function onDragLeave(e) {
   e.currentTarget.classList.remove('drag-over');
@@ -972,9 +1006,39 @@ async function onDrop(e, newStatus) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
   if (!dragId) return;
-  await _applyDrop(dragId, newStatus);
-  document.querySelectorAll('.kanban-card.dragging').forEach(c => c.classList.remove('dragging'));
+  await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex);
+}
+// Läuft nach onDrop (bei erfolgreichem Ablegen) ODER als einzige Reaktion bei
+// abgebrochenem Drag (z.B. Esc, außerhalb jeder Spalte losgelassen) - dragend
+// feuert laut Spec in beiden Fällen, daher genügt ein zentraler Aufräum-Handler.
+function onDragEnd(e) {
+  e.target.closest('.kanban-card')?.classList.remove('dragging');
+  document.querySelectorAll('.kanban-col-body.drag-over').forEach(el => el.classList.remove('drag-over'));
+  _clearKanbanDropIndicator();
   dragId = null;
+}
+
+// Zeigt eine schmale Einfüge-Linie an der Position, an der die gezogene Karte
+// beim Loslassen landen würde - berechnet aus der Fingerposition/Mausposition
+// relativ zur vertikalen Mitte jeder (anderen) Karte in der Zielspalte.
+function _updateKanbanDropIndicator(colEl, clientY) {
+  const cards = [...colEl.querySelectorAll('.kanban-card')].filter(c => c.dataset.id !== dragId);
+  let idx = cards.length, before = null;
+  for (let i = 0; i < cards.length; i++) {
+    const r = cards[i].getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) { idx = i; before = cards[i]; break; }
+  }
+  _kanbanDropIndex = idx;
+  if (!_kanbanDropIndicatorEl) {
+    _kanbanDropIndicatorEl = document.createElement('div');
+    _kanbanDropIndicatorEl.className = 'kanban-drop-indicator';
+  }
+  if (before) colEl.insertBefore(_kanbanDropIndicatorEl, before);
+  else colEl.appendChild(_kanbanDropIndicatorEl);
+}
+function _clearKanbanDropIndicator() {
+  _kanbanDropIndicatorEl?.remove();
+  _kanbanDropIndex = null;
 }
 
 // ── Touch support (iOS Safari doesn't fire drag events) ─────────────────────
@@ -1010,7 +1074,7 @@ function onTouchMove(e) {
   _touchClone.style.display = '';
   const col = under?.closest('.kanban-col-body');
   if (_lastDropTarget && _lastDropTarget !== col) _lastDropTarget.classList.remove('drag-over');
-  if (col) col.classList.add('drag-over');
+  if (col) { col.classList.add('drag-over'); _updateKanbanDropIndicator(col, t.clientY); }
   _lastDropTarget = col || null;
 }
 
@@ -1022,24 +1086,40 @@ async function onTouchEnd(e) {
   if (_lastDropTarget) {
     _lastDropTarget.classList.remove('drag-over');
     const newStatus = _lastDropTarget.dataset.status;
-    if (newStatus && dragId) await _applyDrop(dragId, newStatus);
+    if (newStatus && dragId) await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex);
     _lastDropTarget = null;
   }
+  _clearKanbanDropIndicator();
   dragId = null; _touchSrc = null;
 }
 
-async function _applyDrop(id, newStatus) {
+// Wendet einen Kanban-Drop an: ändert bei Bedarf den Status (Spaltenwechsel) und
+// setzt die Zielspalte immer auf "Eigene Reihenfolge" mit der Karte an der per
+// Drop-Anzeige markierten Position - manuelles Umsortieren soll nicht von der
+// nächsten Sortierung (z.B. nach Datum) sofort wieder verworfen werden.
+async function _applyKanbanDrop(id, newStatus, insertIndex) {
   const app = State.all.find(a => a.id === id);
-  if (app && app.status !== newStatus) {
+  if (!app) return;
+
+  const existing = sortAppsForKanban(State.filtered.filter(a => a.status === newStatus), newStatus)
+    .map(a => a.id).filter(cid => cid !== id);
+  const idx = insertIndex == null ? existing.length : Math.min(insertIndex, existing.length);
+  existing.splice(idx, 0, id);
+  State.kanbanSort[newStatus] = { col: 'custom', dir: 'asc', order: existing };
+  saveKanbanSort();
+
+  if (app.status !== newStatus) {
     const oldStatus  = app.status;
     const oldHistory = app.history ? [...app.history] : [];
     app.status  = newStatus;
     app.history = [...(app.history || []), { status: newStatus, timestamp: nowISO() }];
-    await saveApp(app);
+    await saveApp(app); // rendert die Spalten neu (mit bereits aktualisierter Reihenfolge)
     toast(`Status → ${newStatus}`, 'success', {
       actionLabel: 'Rückgängig',
       onAction: () => undoStatusChange(id, oldStatus, oldHistory),
     });
+  } else {
+    renderView();
   }
 }
 
@@ -2478,6 +2558,7 @@ async function renameStatus(idx, rawName) {
   _renameStatusKey(State.settings.pushOnStatus, oldName, newName);
   _renameStatusKey(State.kanbanSort, oldName, newName);
   saveSettings();
+  saveKanbanSort();
 
   if (State.statusFilterHidden.has(oldName)) {
     State.statusFilterHidden.delete(oldName);
@@ -2524,6 +2605,7 @@ async function deleteStatus(idx) {
   delete State.settings.pushOnStatus?.[target.name];
   delete State.kanbanSort?.[target.name];
   saveSettings();
+  saveKanbanSort();
 
   injectStatusStyles();
   await loadAll();
