@@ -1433,6 +1433,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 }
 .calendar-cell {
   min-height: 88px;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 0.3rem;
