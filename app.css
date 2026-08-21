@@ -647,6 +647,44 @@ button.theme-toggle {
 .btn-sm { font-size: 0.78rem; padding: 0.4rem 0.8rem; border-radius: var(--r-sm); }
 .btn-xs { font-size: 0.72rem; padding: 0.3rem 0.65rem; border-radius: var(--r-sm); }
 
+/* ─── Hover-Tooltip (CSS-only, reusable via data-tooltip="...") ─────────────────
+   Ersatz für das native title-Attribut - das übernimmt zwar die gleiche Aufgabe,
+   sieht aber wie ein reines OS-Fenster aus statt zum Rest der App zu passen (die
+   z.B. auch window.confirm() durch ein eigenes Modal ersetzt). Kein Klick nötig,
+   erscheint direkt beim Hovern mit der Maus. */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 60;
+}
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ─── Form Elements ────────────────────────────────────────────────────────── */
 .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
 .form-label {
@@ -2932,7 +2970,7 @@ body { -webkit-overflow-scrolling: auto; }
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 0.95rem;
+  font-size: 0.88rem; /* wie .settings-row-info h3 - war vorher 0.95rem, größer als alle anderen Zeilentitel */
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 2px;
