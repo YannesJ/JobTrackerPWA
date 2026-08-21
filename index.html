@@ -125,10 +125,56 @@
           <h1>Dashboard</h1>
           <p class="page-header-subtitle">Übersicht deiner Bewerbungsaktivität</p>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="navigate('applications');setTimeout(openForm,150)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Neu
-        </button>
+        <div class="page-header-actions">
+          <!-- Segmentierter Umschalter statt eines einzelnen Knopfes: bei einem
+               Knopf mit wechselnder Beschriftung ist nie klar, ob sie den aktuellen
+               Zustand nennt oder das Ziel. Hier stehen beide Möglichkeiten
+               nebeneinander, die aktive ist hervorgehoben - dasselbe Muster wie der
+               Umschalter Tabelle/Kanban auf der Bewerbungsseite. -->
+          <div class="view-switch" role="group" aria-label="Dashboard-Ansicht">
+            <button class="view-btn active" data-dash-view="stats" onclick="setDashboardView('stats')" aria-pressed="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              Statistiken
+            </button>
+            <button class="view-btn" data-dash-view="sankey" onclick="setDashboardView('sankey')" aria-pressed="false">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h3c5 0 6 14 11 14h4"/><path d="M3 19h3c5 0 6-14 11-14h4"/></svg>
+              Verlauf
+            </button>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="navigate('applications');setTimeout(openForm,150)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Neu
+          </button>
+        </div>
       </div>
+
+      <!-- Verlauf (Sankey) - versteckt, bis der Umschalter oben ihn holt -->
+      <div id="dashboard-sankey" class="hidden">
+        <div class="chart-card">
+          <div class="sankey-head">
+            <div>
+              <div class="chart-title" style="margin-bottom:2px">Wie deine Bewerbungen gelaufen sind</div>
+              <p class="sankey-sub">Jeder Strang folgt dem tatsächlichen Statusverlauf deiner Einträge.</p>
+            </div>
+            <div class="sankey-actions">
+              <button class="btn btn-ghost btn-sm" onclick="copySankey()" title="Als Bild in die Zwischenablage" aria-label="Verlauf als Bild kopieren">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Kopieren
+              </button>
+              <button id="sankey-share-btn" class="btn btn-ghost btn-sm hidden" onclick="shareSankey()" title="Über das Teilen-Menü weitergeben" aria-label="Verlauf teilen">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/></svg>
+                Teilen
+              </button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadSankeySvg()" title="Als SVG-Datei speichern" aria-label="Verlauf speichern">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Speichern
+              </button>
+            </div>
+          </div>
+          <div id="sankey-wrap" class="sankey-wrap"></div>
+        </div>
+      </div>
+
+      <div id="dashboard-stats">
       <!-- Weekly goal -->
       <div class="goal-card" id="goal-progress"></div>
       <div id="goal-editor" class="goal-editor hidden">
@@ -155,6 +201,7 @@
         <div class="chart-title">Interviews &amp; Zusagen nach Quelle</div>
         <div class="chart-wrap" id="chart-source-wrap" style="height:160px"><canvas id="chart-source"></canvas></div>
       </div>
+      </div><!-- /dashboard-stats -->
     </div>
 
     <!-- APPLICATIONS -->

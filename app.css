@@ -3075,3 +3075,93 @@ body { -webkit-overflow-scrolling: auto; }
 }
 /* In der eingeklappten Sidebar ist ohnehin nur Platz fuer eine Spalte. */
 #app.sidebar-collapsed .sidebar-toggles { flex-direction: column; }
+
+/* ─── Dashboard: Verlauf (Sankey) ─────────────────────────────────────────── */
+.page-header-actions { display: flex; align-items: center; gap: 8px; }
+
+.sankey-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: .75rem;
+}
+.sankey-sub {
+  font-size: .75rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+/* Ein Sankey braucht Breite. Statt es zu stauchen darf es hier scrollen -
+   auf dem Handy ist das die einzige Darstellung, die lesbar bleibt. */
+.sankey-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.sankey-wrap svg {
+  display: block;
+  height: auto;
+  max-width: none; /* nicht auf die Kartenbreite zusammenquetschen */
+}
+.sankey-empty {
+  font-size: .82rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2.5rem 1rem;
+}
+.sankey-ribbon {
+  transition: opacity .15s ease;
+}
+.sankey-wrap:hover .sankey-ribbon { opacity: .55; }
+.sankey-ribbon:hover { opacity: 1; }
+.sankey-node { stroke: none; }
+.sankey-label {
+  font-family: 'Outfit', system-ui, sans-serif;
+  /* Größe kommt vom <svg>-Element, das sie an den verfügbaren Platz anpasst. */
+  font-size: inherit;
+  fill: var(--text-secondary);
+}
+.sankey-count {
+  font-weight: 700;
+  fill: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+  .sankey-head { flex-direction: column; align-items: stretch; }
+}
+.sankey-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.sankey-actions .hidden { display: none; }
+@media (max-width: 640px) {
+  .sankey-actions { width: 100%; }
+  .sankey-actions .btn { flex: 1; justify-content: center; }
+}
+
+/* Reihenfolge-Position der Statuskategorie. Steht bewusst ganz links bei den
+   Pfeilen, mit denen sie sich ändern lässt - vorher gab es gar keine sichtbare
+   Positionsangabe, weshalb die Anzahl-Zahl rechts als Reihenfolge missverstanden
+   wurde. */
+.status-position {
+  min-width: 1.35rem;
+  flex-shrink: 0;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.status-position--new { opacity: .5; }
+
+/* Anzahl der Bewerbungen - ausgeschrieben statt als nackte Zahl im Kreis, damit
+   sie nicht mehr wie eine Positionsangabe aussieht. */
+.status-usage {
+  font-size: .75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.status-usage strong {
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

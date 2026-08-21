@@ -2924,6 +2924,9 @@ function renderStatusSettings() {
   if (!el) return;
   el.innerHTML = `
     <p class="status-kind-hint">
+      Die <strong>Reihenfolge</strong> hier ist die Reihenfolge der Kanban-Spalten und der
+      Auswahl im Formular - mit den Pfeilen änderbar.
+      <br />
       „Zählt als" bestimmt, wie eine Kategorie in die Dashboard-Statistiken einfließt
       (z.B. Interview-Rate, offene Bewerbungen) - unabhängig vom Namen.
     </p>
@@ -2933,6 +2936,7 @@ function renderStatusSettings() {
         return `
         <div class="status-manage-item">
           <div class="status-manage-row">
+            <span class="status-position" title="Position ${i + 1} von ${State.statuses.length} - bestimmt die Reihenfolge der Kanban-Spalten">${i + 1}.</span>
             <input type="color" class="status-color-input" value="${escAttr(s.color)}"
               oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
             <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
@@ -2956,12 +2960,15 @@ function renderStatusSettings() {
                 ${STATUS_KINDS.map(k => `<option value="${k.key}" ${s.kind === k.key ? 'selected' : ''}>${k.label}</option>`).join('')}
               </select>
             </label>
-            <span class="status-count" title="${count} Bewerbung${count === 1 ? '' : 'en'} mit diesem Status">${count}</span>
+            <span class="status-usage" title="So viele Bewerbungen stehen gerade auf „${escAttr(s.name)}“">
+              <strong>${count}</strong> ${count === 1 ? 'Bewerbung' : 'Bewerbungen'}
+            </span>
           </div>
         </div>`;
       }).join('')}
     </div>
     <form class="status-add-row" onsubmit="return addStatus(event)">
+      <span class="status-position status-position--new" title="Neue Kategorie wird ans Ende gestellt">${State.statuses.length + 1}.</span>
       <input type="color" id="new-status-color" class="status-color-input" value="#c8e02e" title="Farbe" />
       <input type="text" id="new-status-name" class="form-input status-name-input" placeholder="Neue Kategorie …" required />
       <button type="submit" class="btn btn-ghost btn-sm">

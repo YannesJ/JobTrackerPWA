@@ -128,7 +128,10 @@ function renderDashboard() {
     </div>`).join('');
 
   lucide.createIcons();
-  renderCharts();
+  // Wenn gerade der Verlauf angezeigt wird, waeren die Chart.js-Canvas versteckt -
+  // dort kann die Bibliothek nicht messen. Dann stattdessen das Sankey neu zeichnen.
+  if (!document.getElementById('dashboard-sankey')?.classList.contains('hidden')) renderSankey();
+  else renderCharts();
 }
 
 function openGoalEditor() {
@@ -777,3 +780,331 @@ function applyCssHideClasses() {
 }
 mq_sm.addEventListener('change', applyCssHideClasses);
 window.addEventListener('load', applyCssHideClasses);
+
+// ─── Verlauf als Sankey ───────────────────────────────────────────────────────
+// Zeichnet, wie die Bewerbungen tatsächlich durch die Statuskategorien gelaufen
+// sind. Die Daten liegen bereits vor: app.history führt pro Bewerbung die Kette der
+// Statuswechsel. Bewusst KEINE feste Trichterform ("1. Gespräch", "2. Gespräch") -
+// der Statuskatalog ist frei konfigurierbar, also richtet sich das Diagramm nach den
+// Kategorien des Nutzers statt nach erfundenen Stufen.
+//
+// Gezeichnet wird von Hand als Inline-SVG, nicht über eine Bibliothek: Chart.js
+// bräuchte dafür ein zusätzliches Plugin, und als SVG lässt sich das Bild direkt
+// speichern.
+
+const SANKEY_START_LABEL = 'Bewerbungen';
+
+/** Statuskette einer Bewerbung: aufeinanderfolgende Wiederholungen desselben Status
+ *  werden zusammengefasst (ein Verlauf "Offen, Offen, Interview" ist ein Schritt,
+ *  kein Kreisverkehr). Ohne Verlauf zählt der aktuelle Status als einziger Schritt. */
+function _sankeyChain(app) {
+  const raw = (app.history || []).map(h => h?.status).filter(Boolean);
+  const chain = [];
+  for (const st of raw) if (chain[chain.length - 1] !== st) chain.push(st);
+  if (!chain.length && app.status) chain.push(app.status);
+  return chain;
+}
+
+/** Baut Knoten und Flüsse. Ein Knoten ist ein Paar (Status, Tiefe) - derselbe Status
+ *  auf verschiedenen Stufen bleibt getrennt, sonst liefen Bänder rückwärts und das
+ *  Bild wäre nicht mehr lesbar. */
+function buildSankeyModel(apps) {
+  const nodes = new Map();
+  const links = new Map();
+  const nodeKey = (label, depth) => `${depth} ${label}`;
+
+  const touchNode = (label, depth, isStart = false) => {
+    const key = nodeKey(label, depth);
+    if (!nodes.has(key)) {
+      nodes.set(key, {
+        key, label, depth, value: 0, isStart,
+        color: isStart ? 'var(--accent-text)' : getStatusColor(label),
+      });
+    }
+    const n = nodes.get(key);
+    n.value++;
+    return n;
+  };
+  const touchLink = (from, to) => {
+    const key = `${from.key}>${to.key}`;
+    if (!links.has(key)) links.set(key, { from, to, value: 0 });
+    links.get(key).value++;
+  };
+
+  for (const app of apps) {
+    const chain = _sankeyChain(app);
+    if (!chain.length) continue;
+    let prev = touchNode(SANKEY_START_LABEL, 0, true);
+    chain.forEach((status, i) => {
+      const node = touchNode(status, i + 1);
+      touchLink(prev, node);
+      prev = node;
+    });
+  }
+
+  const maxDepth = Math.max(0, ...[...nodes.values()].map(n => n.depth));
+  // Endknoten (nichts geht weiter) markieren.
+  const hasOutgoing = new Set([...links.values()].map(l => l.from.key));
+  for (const n of nodes.values()) n.isEnd = !hasOutgoing.has(n.key);
+
+  return { nodes: [...nodes.values()], links: [...links.values()], maxDepth };
+}
+
+/** Kubisches Band zwischen zwei Knotenkanten - oben hin, unten zurück. */
+function _sankeyRibbon(x0, y0a, y0b, x1, y1a, y1b) {
+  const cx = (x0 + x1) / 2;
+  return `M${x0},${y0a} C${cx},${y0a} ${cx},${y1a} ${x1},${y1a}`
+       + ` L${x1},${y1b} C${cx},${y1b} ${cx},${y0b} ${x0},${y0b} Z`;
+}
+
+function renderSankey() {
+  const wrap = document.getElementById('sankey-wrap');
+  if (!wrap) return;
+
+  const apps = State.all;
+  if (!apps.length) {
+    wrap.innerHTML = `<p class="sankey-empty">Noch keine Bewerbungen erfasst - sobald du welche anlegst, zeichnet sich hier ihr Weg.</p>`;
+    return;
+  }
+
+  const model = buildSankeyModel(apps);
+  if (!model.links.length) {
+    wrap.innerHTML = `<p class="sankey-empty">Noch keine Statuswechsel vorhanden.</p>`;
+    return;
+  }
+
+  // ── Maße ──────────────────────────────────────────────────────────────────
+  // Auf schmalen Viewports enger bauen. Das Diagramm scrollt dort zwar weiterhin
+  // seitlich (anders bleibt ein Sankey nicht lesbar), aber mit den Desktop-Maßen
+  // war vom ersten Eindruck nur die linke Kante zu sehen.
+  const compact  = (wrap.clientWidth || window.innerWidth) < 700;
+  const colCount = model.maxDepth + 1;
+  const NODE_W   = compact ? 10 : 13;
+  const GAP      = compact ? 11 : 14;    // Luft zwischen Knoten einer Spalte
+  const PAD_T    = 24, PAD_B = 24;
+  const LABEL_W  = compact ? 104 : 150;  // Platz für die Beschriftung rechts vom letzten Knoten
+  const COL_W    = compact ? 132 : 215;
+  const FONT_PX  = compact ? 11 : 13;
+  // Die Startsäule wird links beschriftet - der Platz dafür muss sich nach der
+  // Beschriftung richten, sonst schneidet der viewBox sie ab. Grobe Schätzung der
+  // Textbreite genügt: ~7.3px pro Zeichen bei 13px Outfit, plus etwas Luft.
+  const startLabels = model.nodes.filter(n => n.isStart).map(n => `${n.value} ${n.label}`);
+  const PAD_L = Math.ceil(Math.max(48, ...startLabels.map(t => t.length * FONT_PX * 0.56)) + 18);
+
+  const byDepth = new Map();
+  for (const n of model.nodes) {
+    if (!byDepth.has(n.depth)) byDepth.set(n.depth, []);
+    byDepth.get(n.depth).push(n);
+  }
+  const maxStack = Math.max(...[...byDepth.values()].map(list => list.length));
+  const totalVal = model.nodes.filter(n => n.isStart).reduce((s, n) => s + n.value, 0) || 1;
+  // Pixel pro Bewerbung, gedeckelt: bei wenigen Einträgen soll das Bild nicht
+  // absurd hoch werden, bei vielen nicht zu einem Strich zusammenschrumpfen.
+  const PER_UNIT = Math.max(6, Math.min(compact ? 20 : 28, (compact ? 240 : 320) / totalVal));
+  const bodyH    = Math.max(compact ? 170 : 200, totalVal * PER_UNIT + (maxStack - 1) * GAP);
+  const width    = PAD_L + (colCount - 1) * COL_W + NODE_W + LABEL_W;
+  const height   = PAD_T + bodyH + PAD_B;
+
+  // ── Knoten positionieren ──────────────────────────────────────────────────
+  for (const [depth, list] of byDepth) {
+    // Innerhalb einer Spalte nach Größe sortieren - ruhigeres Bild als in
+    // zufälliger Einfügereihenfolge.
+    list.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    const stackH = list.reduce((s, n) => s + n.value * PER_UNIT, 0) + (list.length - 1) * GAP;
+    let y = PAD_T + (bodyH - stackH) / 2;   // vertikal zentriert
+    for (const n of list) {
+      n.h = Math.max(3, n.value * PER_UNIT);
+      n.y = y;
+      n.x = PAD_L + depth * COL_W;
+      y += n.h + GAP;
+      n.outCursor = n.y;
+      n.inCursor  = n.y;
+    }
+  }
+
+  // Bänder nach Zielposition stapeln, damit sie sich möglichst wenig kreuzen.
+  const links = [...model.links].sort((a, b) => a.to.y - b.to.y || b.value - a.value);
+
+  const defs = [];
+  const ribbons = links.map((l, i) => {
+    const h  = Math.max(2, l.value * PER_UNIT);
+    const y0 = l.from.outCursor; l.from.outCursor += h;
+    const y1 = l.to.inCursor;    l.to.inCursor    += h;
+    const gid = `sk-g-${i}`;
+    defs.push(`<linearGradient id="${gid}" x1="0" x2="1" y1="0" y2="0">`
+      + `<stop offset="0%" stop-color="${escAttr(l.from.color)}" stop-opacity=".5"/>`
+      + `<stop offset="100%" stop-color="${escAttr(l.to.color)}" stop-opacity=".5"/>`
+      + `</linearGradient>`);
+    const d = _sankeyRibbon(l.from.x + NODE_W, y0, y0 + h, l.to.x, y1, y1 + h);
+    return `<path class="sankey-ribbon" d="${d}" fill="url(#${gid})">`
+      + `<title>${escHtml(`${l.from.label} nach ${l.to.label}: ${l.value}`)}</title></path>`;
+  }).join('');
+
+  const nodeEls = model.nodes.map(n => {
+    // Beschriftung der Startsäule steht links, sonst liefe sie in die erste
+    // Bänderwolke hinein. Alle übrigen rechts neben ihrem Knoten.
+    const labelLeft = n.isStart;
+    const tx = labelLeft ? n.x - 9 : n.x + NODE_W + 9;
+    const ty = n.y + n.h / 2;
+    return `<g>`
+      + `<rect class="sankey-node" x="${n.x}" y="${n.y}" width="${NODE_W}" height="${n.h}" rx="3" fill="${escAttr(n.color)}">`
+      + `<title>${escHtml(`${n.label}: ${n.value}`)}</title></rect>`
+      + `<text class="sankey-label" x="${tx}" y="${ty}" text-anchor="${labelLeft ? 'end' : 'start'}" dominant-baseline="middle">`
+      + `<tspan class="sankey-count">${n.value}</tspan><tspan dx="6">${escHtml(n.label)}</tspan></text>`
+      + `</g>`;
+  }).join('');
+
+  wrap.innerHTML = `<svg id="sankey-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"`
+    + ` xmlns="http://www.w3.org/2000/svg" role="img"`
+    + ` aria-label="Flussdiagramm der Bewerbungen durch die Statuskategorien"`
+    + ` style="font-size:${FONT_PX}px">`
+    + `<defs>${defs.join('')}</defs><g>${ribbons}</g><g>${nodeEls}</g></svg>`;
+}
+
+/** Dashboard-Ansicht setzen. Zwei feste Zustände statt eines Umschaltens ins
+ *  Ungewisse - der Knopf sagt jederzeit, was man gerade sieht. */
+function setDashboardView(view) {
+  const stats  = document.getElementById('dashboard-stats');
+  const sankey = document.getElementById('dashboard-sankey');
+  if (!stats || !sankey) return;
+  const showSankey = view === 'sankey';
+
+  stats.classList.toggle('hidden', showSankey);
+  sankey.classList.toggle('hidden', !showSankey);
+
+  document.querySelectorAll('[data-dash-view]').forEach(b => {
+    const isActive = b.dataset.dashView === view;
+    b.classList.toggle('active', isActive);
+    b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  if (showSankey) { renderSankey(); _syncSankeyShareButton(); }
+  else renderCharts(); // Chart.js kann nur messen, solange das Canvas sichtbar ist
+}
+
+/** Das gezeichnete SVG als Datei sichern - ersetzt den Umweg über externe Generatoren. */
+function downloadSankeySvg() {
+  const markup = _sankeySvgString();
+  if (!markup) { toast('Noch nichts zu speichern', 'info'); return; }
+  const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jobtracker-verlauf-${localDateStr(new Date())}.svg`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Verlauf gespeichert', 'success');
+}
+
+// ─── Verlauf: speichern, kopieren, teilen ─────────────────────────────────────
+// Alle drei Wege brauchen dasselbe eigenständige SVG: im Dokument stecken die Farben
+// in CSS-Variablen und die Textstile in app.css - beides existiert außerhalb der
+// Seite nicht mehr und muss vorher aufgelöst und eingebettet werden.
+function _sankeySvgString({ background = '#ffffff' } = {}) {
+  const svg = document.getElementById('sankey-svg');
+  if (!svg) return null;
+  const clone = svg.cloneNode(true);
+  const cs = getComputedStyle(document.documentElement);
+  const resolve = (el, attr) => {
+    const v = el.getAttribute(attr) || '';
+    if (!v.startsWith('var(')) return;
+    el.setAttribute(attr, cs.getPropertyValue(v.slice(4, -1).trim()).trim() || '#8888a8');
+  };
+  clone.querySelectorAll('[fill]').forEach(el => resolve(el, 'fill'));
+  clone.querySelectorAll('stop').forEach(el => resolve(el, 'stop-color'));
+
+  const textColor = cs.getPropertyValue('--text-primary').trim() || '#151514';
+  const subColor  = cs.getPropertyValue('--text-secondary').trim() || '#5a5a56';
+  // Beim Rastern in ein <canvas> rendert der Browser das SVG abgeschottet und ohne
+  // Zugriff auf die Schriften der Seite - deshalb eine belastbare Fallback-Kette
+  // statt sich auf 'Outfit' zu verlassen.
+  clone.insertAdjacentHTML('afterbegin',
+    `<style>`
+    + `text{font-family:'Outfit',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;fill:${subColor}}`
+    + `.sankey-count{font-weight:700;fill:${textColor}}`
+    + `</style>`
+    + `<rect x="0" y="0" width="100%" height="100%" fill="${background}"/>`);
+  return clone.outerHTML;
+}
+
+/** SVG in ein PNG umwandeln. scale=2 für eine Auflösung, die auch eingefügt in
+ *  Chat oder Dokument noch scharf aussieht. */
+function _sankeyPngBlob(scale = 2) {
+  return new Promise((resolve, reject) => {
+    const markup = _sankeySvgString();
+    if (!markup) { reject(new Error('Kein Diagramm vorhanden')); return; }
+    const svgEl = document.getElementById('sankey-svg');
+    const w = Number(svgEl.getAttribute('width'));
+    const h = Number(svgEl.getAttribute('height'));
+    const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width  = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Bild konnte nicht erzeugt werden')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht erzeugt werden')); };
+    img.src = url;
+  });
+}
+
+/** Als Bild in die Zwischenablage. Fällt auf den SVG-Quelltext zurück, wenn der
+ *  Browser keine Bilder in die Zwischenablage lässt (u.a. Firefox). */
+async function copySankey() {
+  try {
+    const canWriteImage = typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write;
+    if (canWriteImage) {
+      const blob = await _sankeyPngBlob();
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast('Verlauf als Bild kopiert', 'success');
+      return;
+    }
+    const markup = _sankeySvgString();
+    if (!markup) throw new Error('Kein Diagramm vorhanden');
+    await navigator.clipboard.writeText(markup);
+    toast('Verlauf als SVG-Code kopiert', 'success');
+  } catch (err) {
+    // Bei verweigerter Zwischenablage-Berechtigung bleibt der Download der Weg.
+    toast('Kopieren nicht möglich - "Speichern" funktioniert stattdessen', 'warning');
+    console.error('[Sankey kopieren]', err);
+  }
+}
+
+/** Über das Teilen-Menü des Geräts weitergeben (Web Share). Ohne Dateiunterstützung
+ *  wird der Knopf gar nicht erst angezeigt, siehe _syncSankeyShareButton(). */
+async function shareSankey() {
+  try {
+    const blob = await _sankeyPngBlob();
+    const file = new File([blob], `jobtracker-verlauf-${localDateStr(new Date())}.png`, { type: 'image/png' });
+    if (!navigator.canShare?.({ files: [file] })) {
+      toast('Teilen wird hier nicht unterstützt - "Kopieren" oder "Speichern" nutzen', 'warning');
+      return;
+    }
+    await navigator.share({
+      files: [file],
+      title: 'Mein Bewerbungsverlauf',
+      text: 'Erstellt mit JobTracker',
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') return; // vom Nutzer abgebrochen, keine Meldung
+    toast('Teilen fehlgeschlagen', 'error');
+    console.error('[Sankey teilen]', err);
+  }
+}
+
+/** Web Share mit Dateien gibt es vor allem auf Mobilgeräten. Statt einen Knopf zu
+ *  zeigen, der beim Tippen nur bedauert, wird er auf dem Desktop ausgeblendet. */
+function _syncSankeyShareButton() {
+  const btn = document.getElementById('sankey-share-btn');
+  if (!btn) return;
+  let ok = false;
+  try {
+    ok = !!navigator.canShare?.({ files: [new File([new Blob(['x'])], 'p.png', { type: 'image/png' })] });
+  } catch { ok = false; }
+  btn.classList.toggle('hidden', !ok);
+}
