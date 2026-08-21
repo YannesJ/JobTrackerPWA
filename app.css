@@ -2,22 +2,24 @@
  * Copyright 2026 Yannes Jabboury. Alle Rechte vorbehalten. All rights reserved.
  */
 
-/* ─── Fonts (Outfit + JetBrains Mono, self-hosted under vendor/fonts/) ────────
+/* ─── Fonts (Outfit + Roboto Mono, self-hosted under vendor/fonts/) ───────────
    Vendored instead of loaded from fonts.googleapis.com - no third-party request
-   on every visit, and it can't ever go down independently of this site. */
+   on every visit, and it can't ever go down independently of this site.
+   Roboto Mono's digits use a plain oval zero (no dot/slash), so it stays
+   clearly distinct from an 8 even at small sizes - unlike JetBrains Mono's
+   dotted zero, which read as an 8 in numbers like salary figures. */
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 300; src: url('vendor/fonts/outfit-latin-300-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 400; src: url('vendor/fonts/outfit-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 500; src: url('vendor/fonts/outfit-latin-500-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 600; src: url('vendor/fonts/outfit-latin-600-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 700; src: url('vendor/fonts/outfit-latin-700-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Outfit'; font-style: normal; font-display: swap; font-weight: 800; src: url('vendor/fonts/outfit-latin-800-normal.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-display: swap; font-weight: 400; src: url('vendor/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
-@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-display: swap; font-weight: 500; src: url('vendor/fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto Mono'; font-style: normal; font-display: swap; font-weight: 100 700; src: url('vendor/fonts/roboto-mono-latin-wght-normal.woff2') format('woff2'); }
 
 /* ─── Design Tokens ────────────────────────────────────────────────────────── */
 :root {
   --font-display: 'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-mono: 'Roboto Mono', monospace;
 
   /* Radius */
   --r-sm:   6px;
@@ -1258,6 +1260,15 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .star-btn.filled { color: #f59e0b; }
 .star-btn.filled svg { fill: currentColor; }
 .priority-stars { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; }
+.priority-star-btn {
+  padding: 1px;
+  border: none;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+  transition: transform var(--t-fast);
+}
+.priority-star-btn:hover { transform: scale(1.15); }
 
 /* ─── Info-Seite: eine durchgehende Liste mit Trennlinien statt Einzelkästen ── */
 .info-block {
@@ -2523,6 +2534,10 @@ body { -webkit-overflow-scrolling: auto; }
   min-width: 130px;
 }
 
+/* Card-/Zeilen-Aktionsmenü ("⋯"): braucht denselben Vorrang, da es auch aus
+   der offenen Detailansicht heraus geöffnet wird (Backdrop bei z-index 9000). */
+.card-menu-popover { z-index: 9500; }
+
 /* ── history-note-group hidden by default, shown via JS ─────────────────── */
 #f-history-note-group.hidden { display: none; }
 
@@ -2729,18 +2744,7 @@ body { -webkit-overflow-scrolling: auto; }
    CONTEXTUAL RESEARCH BUTTONS
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Icon-only research button in modal header (Lupe) */
-.research-btn-icon {
-  color: var(--text-muted) !important;
-  transition: color var(--t-fast), background var(--t-fast) !important;
-}
-.research-btn-icon:hover {
-  color: var(--accent-text) !important;
-  background: var(--accent-faint) !important;
-}
-[data-theme="dark"] .research-btn-icon:hover { color: var(--accent-light) !important; }
-
-/* Inline text+icon button for salary next to position */
+/* Inline text+icon button for salary/employer research, next to position */
 .research-btn {
   display: inline-flex;
   align-items: center;

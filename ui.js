@@ -492,8 +492,7 @@ function renderTable() {
       <td onclick="event.stopPropagation()">
         <div class="table-actions">
           <button class="btn btn-icon btn-sm" onclick="openForm('${a.id}')" title="Bearbeiten" aria-label="Bearbeiten"><i data-lucide="edit-2" style="width:14px;height:14px"></i></button>
-          <button class="btn btn-icon btn-sm" onclick="duplicateApp('${a.id}')" title="Duplizieren" aria-label="Duplizieren"><i data-lucide="copy" style="width:14px;height:14px"></i></button>
-          <button class="btn btn-icon btn-sm" onclick="confirmDelete('${a.id}')" title="Löschen" aria-label="Löschen" style="color:var(--text-muted)"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
+          <button class="btn btn-icon btn-sm" onclick="toggleCardMenu(event,'${a.id}')" title="Weitere Aktionen" aria-label="Weitere Aktionen"><i data-lucide="more-vertical" style="width:14px;height:14px"></i></button>
         </div>
       </td>
     </tr>`;

@@ -508,16 +508,29 @@ function fmtEuroShort(n) {
 const STAR_ICON_PATH = 'M12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2';
 /** 1-3 Sterne als Markup, gefüllt bis n. Leer/0/null -> '', außer alwaysShow ist
     gesetzt (Detailansicht: Priorität dort immer als setzbare Bewertung erkennbar,
-    auch unbefüllt - Tabelle/Kanban sollen dagegen nur befüllte Werte zeigen). */
-function starsHTML(n, size = 12, alwaysShow = false) {
+    auch unbefüllt - Tabelle/Kanban sollen dagegen nur befüllte Werte zeigen).
+    Mit id werden die Sterne klickbar (Detailansicht: Priorität per Klick setzen). */
+function starsHTML(n, size = 12, alwaysShow = false, id = null) {
   n = Number(n) || 0;
   if (!n && !alwaysShow) return '';
   let out = '';
   for (let i = 1; i <= 3; i++) {
-    const on = i <= n;
-    out += `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${on ? '#f59e0b' : 'none'}" stroke="${on ? '#f59e0b' : 'var(--text-muted)'}" stroke-width="2"><path d="${STAR_ICON_PATH}Z"/></svg>`;
+    const on  = i <= n;
+    const svg = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${on ? '#f59e0b' : 'none'}" stroke="${on ? '#f59e0b' : 'var(--text-muted)'}" stroke-width="2"><path d="${STAR_ICON_PATH}Z"/></svg>`;
+    out += id
+      ? `<button type="button" class="priority-star-btn" onclick="event.stopPropagation();setPriority('${escJs(id)}',${i})" title="Priorität ${i}/3 setzen" aria-label="Priorität ${i}/3 setzen">${svg}</button>`
+      : svg;
   }
   return `<span class="priority-stars" title="Priorität: ${n}/3">${out}</span>`;
+}
+/** Priorität per Sternklick setzen (Detailansicht) - Klick auf den bereits
+    aktiven höchsten Stern setzt zurück auf 0. */
+async function setPriority(id, n) {
+  const a = State.all.find(x => x.id === id);
+  if (!a) return;
+  a.priority = (a.priority === n) ? 0 : n;
+  await saveApp(a);
+  if (!document.getElementById('detail-modal').classList.contains('hidden')) openDetail(id);
 }
 
 function daysSince(iso) {
@@ -1213,7 +1226,7 @@ function openDetail(id) {
   badge.textContent = a.status;
   badge.className   = `badge ${statusClass(a.status)}`;
   const starsEl = document.getElementById('d-priority-stars');
-  if (starsEl) starsEl.innerHTML = starsHTML(a.priority, 13, true);
+  if (starsEl) starsEl.innerHTML = starsHTML(a.priority, 13, true, id);
 
   // Reminder - settings-based threshold per status
   const lastTs    = a.history?.slice(-1)[0]?.timestamp || a.applicationDate;
@@ -1293,9 +1306,8 @@ function openDetail(id) {
   }
 
   // Action buttons
-  document.getElementById('d-edit-btn').onclick      = () => { closeDetail(); openForm(id); };
-  document.getElementById('d-duplicate-btn').onclick = () => { closeDetail(); duplicateApp(id); };
-  document.getElementById('d-delete-btn').onclick    = () => { closeDetail(); confirmDelete(id); };
+  document.getElementById('d-edit-btn').onclick = () => { closeDetail(); openForm(id); };
+  document.getElementById('d-more-btn').onclick = (e) => toggleDetailMoreMenu(e, id);
   showModal('detail-modal');
   lucide.createIcons();
 }
@@ -1768,30 +1780,17 @@ function toggleColumnsMenu(e) {
   }, 0);
 }
 
-// ─── Mobile Karten-Aktionsmenü (Bearbeiten/Duplizieren/Löschen hinter "⋯") ─────
-function toggleCardMenu(e, id) {
-  e.stopPropagation();
+// ─── Aktionsmenü-Popover (Mobile Karten / Desktop-Tabelle / Detailansicht) ─────
+// Gemeinsame Positionierungs-/Lifecycle-Logik für die "⋯"-Menüs, die die
+// selteneren Zeilen-/Kartenaktionen hinter einem Button verstecken.
+function openActionPopover(anchorBtn, itemsHtml) {
   document.querySelectorAll('.card-menu-popover').forEach(p => p.remove());
 
   const popover = document.createElement('div');
   popover.className = 'sort-popover card-menu-popover';
-  popover.innerHTML = `
-    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();openForm('${escJs(id)}')">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      Bearbeiten
-    </div>
-    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();duplicateApp('${escJs(id)}')">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      Duplizieren
-    </div>
-    <div class="sort-popover-item card-menu-item-danger" onclick="event.stopPropagation();closeCardMenu();confirmDelete('${escJs(id)}')">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-      Löschen
-    </div>
-  `;
+  popover.innerHTML = itemsHtml;
 
-  const btn  = e.currentTarget;
-  const rect = btn.getBoundingClientRect();
+  const rect = anchorBtn.getBoundingClientRect();
   popover.style.position   = 'fixed';
   popover.style.visibility = 'hidden';
   document.body.appendChild(popover);
@@ -1814,7 +1813,7 @@ function toggleCardMenu(e, id) {
       window.removeEventListener('resize', cleanup);
     };
     const onDocClick = (ev) => {
-      if (btn.contains(ev.target) || popover.contains(ev.target)) return;
+      if (anchorBtn.contains(ev.target) || popover.contains(ev.target)) return;
       cleanup();
     };
     document.addEventListener('click', onDocClick, true);
@@ -1824,6 +1823,44 @@ function toggleCardMenu(e, id) {
 }
 function closeCardMenu() {
   document.querySelectorAll('.card-menu-popover').forEach(p => p.remove());
+}
+
+// ─── Karten-/Zeilen-Aktionsmenü (Bearbeiten/Duplizieren/Löschen hinter "⋯") ───
+// Mobile Karten und die Desktop-Tabelle verstecken ihre Zeilenaktionen gleich
+// hinter diesem Menü statt sie als einzelne Icons nebeneinander zu zeigen.
+function toggleCardMenu(e, id) {
+  e.stopPropagation();
+  openActionPopover(e.currentTarget, `
+    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();openForm('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Bearbeiten
+    </div>
+    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();duplicateApp('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Duplizieren
+    </div>
+    <div class="sort-popover-item card-menu-item-danger" onclick="event.stopPropagation();closeCardMenu();confirmDelete('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      Löschen
+    </div>
+  `);
+}
+
+// ─── Detailansicht-Aktionsmenü (Duplizieren/Löschen hinter "⋯") ───────────────
+// Bearbeiten bleibt als eigener Button sichtbar, nur die selteneren Aktionen
+// wandern hinter das Menü.
+function toggleDetailMoreMenu(e, id) {
+  e.stopPropagation();
+  openActionPopover(e.currentTarget, `
+    <div class="sort-popover-item" onclick="event.stopPropagation();closeCardMenu();closeDetail();duplicateApp('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Duplizieren
+    </div>
+    <div class="sort-popover-item card-menu-item-danger" onclick="event.stopPropagation();closeCardMenu();closeDetail();confirmDelete('${escJs(id)}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      Löschen
+    </div>
+  `);
 }
 
 async function importCSV(e) {

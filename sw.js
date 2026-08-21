@@ -3,7 +3,7 @@
  */
 'use strict';
 
-const CACHE_APP_SHELL = 'jobtracker-app-shell-v6';
+const CACHE_APP_SHELL = 'jobtracker-app-shell-v7';
 
 // Every asset the app needs is now same-origin (idb-keyval/lucide/chart.js/fonts are
 // vendored under vendor/, see index.html and app.css) - no CDN cache/origin list needed
@@ -21,8 +21,7 @@ const APP_SHELL_URLS = [
   '/vendor/fonts/outfit-latin-600-normal.woff2',
   '/vendor/fonts/outfit-latin-700-normal.woff2',
   '/vendor/fonts/outfit-latin-800-normal.woff2',
-  '/vendor/fonts/jetbrains-mono-latin-400-normal.woff2',
-  '/vendor/fonts/jetbrains-mono-latin-500-normal.woff2',
+  '/vendor/fonts/roboto-mono-latin-wght-normal.woff2',
 ];
 
 // ── Install ──────────────────────────────────────────────────────────────────
