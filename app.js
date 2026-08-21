@@ -1589,11 +1589,16 @@ async function exportCSV() {
   // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
   // da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
   // Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
-  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = data.map(a => [
     esc(a.company), esc(a.position), esc(a.status), esc(getStatusColor(a.status)),
-    esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''), esc(a.source),
+    // Statusreihenfolge (1-basierter Index in State.statuses) wird mitexportiert, weil
+    // sonst beim Import nur die Reihenfolge des ersten Auftretens in den Zeilen übrig
+    // bliebe - die stimmt i.A. nicht mit der konfigurierten Kanban-Spaltenreihenfolge
+    // überein, sobald z.B. der erste Eintrag zufällig einen späten Status hat.
+    esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''),
+    esc(State.statuses.findIndex(s => s.name === a.status) + 1 || ''), esc(a.source),
     esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
     esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
     esc(a.platformLink), esc(a.documentLink), esc(a.notes),
@@ -1621,7 +1626,7 @@ const IMPORT_COL_MAP = {
 };
 // Zusatzspalten, die keine Felder der Bewerbung selbst sind, sondern die Statuskategorie
 // (Farbe/Zähl-Kind) beschreiben, aus der die Zeile stammt - siehe exportCSV().
-const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel' };
+const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order' };
 
 function parseDelimitedLine(line, delim) {
   const result = []; let cur = ''; let inQ = false;
@@ -1676,14 +1681,16 @@ async function parseSpreadsheetRows(file) {
 }
 
 // Gibt { apps, statuses } zurück: `statuses` ist der aus den (optionalen) Spalten
-// Statusfarbe/Statustyp rekonstruierte Statuskatalog, ein Eintrag je eindeutigem
-// Statusnamen in der Reihenfolge des ersten Auftretens.
+// Statusfarbe/Statustyp/Statusreihenfolge rekonstruierte Statuskatalog, ein Eintrag
+// je eindeutigem Statusnamen, sortiert nach Statusreihenfolge (Kanban-Spaltenreihenfolge) -
+// mit Fallback auf die Reihenfolge des ersten Auftretens, falls diese Spalte fehlt
+// (z.B. bei einer von Hand angelegten CSV-Datei).
 function spreadsheetRowsToApplications(rows) {
   if (rows.length < 2) throw new Error('Keine Daten gefunden');
   const header = rows[0].map(h => String(h ?? '').replace(/^"|"$/g, '').trim().toLowerCase());
 
   const imported = [];
-  const statusDefs = new Map(); // name -> { name, color, kind }
+  const statusDefs = new Map(); // name -> { name, color, kind, order }
   for (let i = 1; i < rows.length; i++) {
     const vals = rows[i];
     if (!vals || !vals.length) continue;
@@ -1708,14 +1715,20 @@ function spreadsheetRowsToApplications(rows) {
     if (!statusDefs.has(app.status)) {
       const color = /^#[0-9a-f]{6}$/i.test(statusMeta.color || '') ? statusMeta.color : null;
       const kind  = STATUS_KINDS.find(k => k.label === statusMeta.kindLabel)?.key || null;
+      const order = Number(statusMeta.order);
       statusDefs.set(app.status, {
         name: app.status,
         color: color || getStatusColor(app.status),
         kind:  kind  || getStatusKind(app.status),
+        // Statuskategorien ohne (gültige) Reihenfolge-Spalte landen hinter denen mit
+        // Angabe, in der Reihenfolge ihres ersten Auftretens (Map-Einfügereihenfolge).
+        order: Number.isFinite(order) && order > 0 ? order : 1000 + statusDefs.size,
       });
     }
   }
-  return { apps: imported, statuses: [...statusDefs.values()] };
+  const statuses = [...statusDefs.values()].sort((a, b) => a.order - b.order)
+    .map(({ order, ...s }) => s);
+  return { apps: imported, statuses };
 }
 
 // \u2500\u2500\u2500 Import-Format-Hinweis (Popover) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
