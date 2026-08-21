@@ -483,6 +483,19 @@ function loadKanbanSort() {
 function saveKanbanSort() {
   localStorage.setItem('jt-kanban-sort', JSON.stringify(State.kanbanSort));
 }
+// Normalisiert einen (aus einem JSON-/CSV-Import stammenden) Kanban-Sortierkatalog:
+// nur Einträge mit gültigem Statusnamen/Spalte behalten, `order` (falls vorhanden)
+// auf ein Array von String-IDs beschränkt.
+function sanitizeKanbanSort(obj) {
+  const out = {};
+  for (const [status, ks] of Object.entries(obj || {})) {
+    if (!status || !ks || typeof ks.col !== 'string') continue;
+    const entry = { col: ks.col, dir: ks.dir === 'desc' ? 'desc' : 'asc' };
+    if (ks.col === 'custom') entry.order = Array.isArray(ks.order) ? ks.order.filter(id => typeof id === 'string') : [];
+    out[status] = entry;
+  }
+  return out;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function uuid() {
@@ -1647,10 +1660,11 @@ async function exportData() {
   const pairs = await idbEntries(DB);
   const data  = pairs.map(([,v]) => v);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
-  // Statuskategorien (Name, Farbe, Zähl-Kind) gehören mit in den Export, sonst
-  // sehen die importierten Einträge auf einem anderen Gerät mit abweichender
-  // Statuskonfiguration (z.B. andere Farben) anders aus als auf dem Ursprungsgerät.
-  const payload = { applications: data, statuses: State.statuses };
+  // Statuskategorien (Name, Farbe, Zähl-Kind) und die Kanban-Sortierung (inkl. per
+  // Drag&Drop gesetzter "Eigener Reihenfolge") gehören mit in den Export, sonst sieht
+  // das Kanban-Board auf einem anderen Gerät nach dem Import anders aus/sortiert sich
+  // anders als auf dem Ursprungsgerät.
+  const payload = { applications: data, statuses: State.statuses, kanbanSort: State.kanbanSort };
   const blob  = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
@@ -1669,20 +1683,28 @@ async function exportCSV() {
   // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
   // da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
   // Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
-  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+  const cols = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Kartenposition','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = data.map(a => [
-    esc(a.company), esc(a.position), esc(a.status), esc(getStatusColor(a.status)),
-    // Statusreihenfolge (1-basierter Index in State.statuses) wird mitexportiert, weil
-    // sonst beim Import nur die Reihenfolge des ersten Auftretens in den Zeilen übrig
-    // bliebe - die stimmt i.A. nicht mit der konfigurierten Kanban-Spaltenreihenfolge
-    // überein, sobald z.B. der erste Eintrag zufällig einen späten Status hat.
-    esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''),
-    esc(State.statuses.findIndex(s => s.name === a.status) + 1 || ''), esc(a.source),
-    esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
-    esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
-    esc(a.platformLink), esc(a.documentLink), esc(a.notes),
-  ].join(';'));
+  const rows = data.map(a => {
+    // Kartenposition (1-basierter Index innerhalb der per Drag&Drop gesetzten "Eigenen
+    // Reihenfolge" der Statusspalte) nur befüllen, wenn diese Spalte tatsächlich manuell
+    // sortiert ist - sonst soll der Import dort keine erzwungene Reihenfolge anlegen.
+    const ks = State.kanbanSort[a.status];
+    const cardPos = ks?.col === 'custom' ? ks.order?.indexOf(a.id) : -1;
+    return [
+      esc(a.company), esc(a.position), esc(a.status), esc(getStatusColor(a.status)),
+      // Statusreihenfolge (1-basierter Index in State.statuses) wird mitexportiert, weil
+      // sonst beim Import nur die Reihenfolge des ersten Auftretens in den Zeilen übrig
+      // bliebe - die stimmt i.A. nicht mit der konfigurierten Kanban-Spaltenreihenfolge
+      // überein, sobald z.B. der erste Eintrag zufällig einen späten Status hat.
+      esc(STATUS_KINDS.find(k => k.key === getStatusKind(a.status))?.label || ''),
+      esc(State.statuses.findIndex(s => s.name === a.status) + 1 || ''),
+      esc(cardPos > -1 ? cardPos + 1 : ''), esc(a.source),
+      esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
+      esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
+      esc(a.platformLink), esc(a.documentLink), esc(a.notes),
+    ].join(';');
+  });
 
   const csv  = '\uFEFF' + [cols.join(';'), ...rows].join('\r\n'); // BOM for Excel
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
@@ -1706,7 +1728,7 @@ const IMPORT_COL_MAP = {
 };
 // Zusatzspalten, die keine Felder der Bewerbung selbst sind, sondern die Statuskategorie
 // (Farbe/Zähl-Kind) beschreiben, aus der die Zeile stammt - siehe exportCSV().
-const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order' };
+const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order', kartenposition:'cardPos' };
 
 function parseDelimitedLine(line, delim) {
   const result = []; let cur = ''; let inQ = false;
@@ -1771,6 +1793,7 @@ function spreadsheetRowsToApplications(rows) {
 
   const imported = [];
   const statusDefs = new Map(); // name -> { name, color, kind, order }
+  const cardPositions = []; // { id, status, pos } - aus der Kartenposition-Spalte (custom Kanban-Reihenfolge)
   for (let i = 1; i < rows.length; i++) {
     const vals = rows[i];
     if (!vals || !vals.length) continue;
@@ -1805,10 +1828,27 @@ function spreadsheetRowsToApplications(rows) {
         order: Number.isFinite(order) && order > 0 ? order : 1000 + statusDefs.size,
       });
     }
+
+    const cardPos = Number(statusMeta.cardPos);
+    if (Number.isFinite(cardPos) && cardPos > 0) cardPositions.push({ id: app.id, status: app.status, pos: cardPos });
   }
   const statuses = [...statusDefs.values()].sort((a, b) => a.order - b.order)
     .map(({ order, ...s }) => s);
-  return { apps: imported, statuses };
+
+  // Kanban-"Eigene Reihenfolge" je Status nur anlegen, wenn diese Spalte beim Export
+  // tatsächlich manuell sortiert war (siehe exportCSV()) - sonst fehlt die Kartenposition
+  // und die Spalte behält ihre normale Sortierung (Datum/Firma/...).
+  const kanbanSort = {};
+  const byStatus = new Map();
+  for (const cp of cardPositions) {
+    if (!byStatus.has(cp.status)) byStatus.set(cp.status, []);
+    byStatus.get(cp.status).push(cp);
+  }
+  for (const [status, list] of byStatus) {
+    kanbanSort[status] = { col: 'custom', dir: 'asc', order: list.sort((a, b) => a.pos - b.pos).map(c => c.id) };
+  }
+
+  return { apps: imported, statuses, kanbanSort };
 }
 
 // \u2500\u2500\u2500 Import-Format-Hinweis (Popover) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -2001,7 +2041,7 @@ async function importCSV(e) {
   if (!file) return;
   try {
     const rows = await parseSpreadsheetRows(file);
-    const { apps, statuses } = spreadsheetRowsToApplications(rows);
+    const { apps, statuses, kanbanSort } = spreadsheetRowsToApplications(rows);
     if (!apps.length) throw new Error('Keine gültigen Zeilen gefunden');
     await idbClear(DB);
     for (const app of apps) await idbSet(app.id, app, DB);
@@ -2012,6 +2052,11 @@ async function importCSV(e) {
       State.statuses = sanitizeStatuses(statuses); saveStatuses();
       injectStatusStyles(); renderStatusSelectOptions();
       if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+    }
+    // Eigene Kanban-Kartenreihenfolge aus der Kartenposition-Spalte übernehmen (nur für
+    // Spalten, die beim Export tatsächlich manuell sortiert waren - siehe exportCSV()).
+    if (Object.keys(kanbanSort).length) {
+      State.kanbanSort = sanitizeKanbanSort(kanbanSort); saveKanbanSort();
     }
     await loadAll();
     toast(`${apps.length} Einträge importiert ✓`, 'success');
@@ -2026,10 +2071,11 @@ async function importData(e) {
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    // Neues Format: { applications, statuses }. Altes Format (vor diesem Feature
-    // exportiert): einfaches Array von Bewerbungen ohne Statuskatalog.
-    const data     = Array.isArray(parsed) ? parsed : parsed.applications;
-    const statuses = Array.isArray(parsed) ? null   : parsed.statuses;
+    // Neues Format: { applications, statuses, kanbanSort }. Altes Format (vor diesem
+    // Feature exportiert): einfaches Array von Bewerbungen ohne Statuskatalog.
+    const data       = Array.isArray(parsed) ? parsed : parsed.applications;
+    const statuses   = Array.isArray(parsed) ? null   : parsed.statuses;
+    const kanbanSort = Array.isArray(parsed) ? null   : parsed.kanbanSort;
     if (!Array.isArray(data)) throw new Error('Ungültiges Format');
     await idbClear(DB);
     for (const app of data) await idbSet(app.id, app, DB);
@@ -2037,6 +2083,12 @@ async function importData(e) {
       State.statuses = sanitizeStatuses(statuses); saveStatuses();
       injectStatusStyles(); renderStatusSelectOptions();
       if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+    }
+    // Eigene Kanban-Kartenreihenfolge (falls die exportierende Version das Feature
+    // schon kannte) 1:1 übernehmen - anders als bei CSV bleiben die Bewerbungs-IDs
+    // beim JSON-Import erhalten, die gespeicherten Reihenfolgen passen also direkt.
+    if (kanbanSort && typeof kanbanSort === 'object' && !Array.isArray(kanbanSort)) {
+      State.kanbanSort = sanitizeKanbanSort(kanbanSort); saveKanbanSort();
     }
     await loadAll();
     toast(`${data.length} Einträge importiert ✓`, 'success');
