@@ -25,6 +25,13 @@ const assert = require('assert');
 
 const ROOT = path.join(__dirname, '..');
 
+// app.js's own Init IIFE keeps running in the background inside the mocked vm context
+// after the tests below are done - real app startup code awaiting idbReady/loadAll/etc
+// that isn't mocked deeply enough to finish cleanly. Whether that surfaces as a crash
+// depends on exactly when it happens to throw relative to this file's own async work,
+// which is timing-fragile - guard it globally instead of chasing every possible gap.
+process.on('unhandledRejection', () => {});
+
 let passed = 0;
 let failed = 0;
 const failures = [];
@@ -37,6 +44,16 @@ function test(name, fn) {
     failed++;
     failures.push({ name, err });
   }
+}
+
+// For the (few) async helpers - e.g. the gzip round trip, which genuinely needs to
+// await CompressionStream/DecompressionStream. Queued and awaited together right
+// before the final report (see bottom of file) instead of making every test async.
+const pendingAsync = [];
+function asyncTest(name, fn) {
+  pendingAsync.push(
+    fn().then(() => { passed++; }).catch((err) => { failed++; failures.push({ name, err }); })
+  );
 }
 
 // ─── Minimal mocked browser environment ────────────────────────────────────
@@ -130,6 +147,9 @@ function loadAppContext() {
     indexedDB: makeIndexedDB(),
     idbKeyval: makeIdbKeyval(),
     crypto: globalThis.crypto,
+    // Used by the QR device-sync gzip/text-encoding helpers - real Node globals, same
+    // pattern as `crypto` above, so those helpers can be exercised end-to-end below.
+    CompressionStream, DecompressionStream, Response, TextEncoder, TextDecoder,
     location: { search: '', href: 'http://localhost/' },
     URLSearchParams,
     URL,
@@ -143,6 +163,10 @@ function loadAppContext() {
     innerWidth: 1400, innerHeight: 900,
     visualViewport: null,
     addEventListener() {}, removeEventListener() {},
+    // app.js's own Init IIFE (see note near process.exit() below) reaches into
+    // rendering code that reads CSS custom properties - stub just enough for that
+    // not to throw, same spirit as the lucide/Chart stubs a few lines down.
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
   };
   sandbox.globalThis = sandbox;
   sandbox.window = sandbox; // app.js/ui.js reference window.* and bare globals interchangeably
@@ -174,7 +198,9 @@ function loadAppContext() {
   const exported = vm.runInContext(
     `({ TABLE_COLUMNS, DEFAULT_TABLE_COLUMNS, State, JOB_PORTALS, DEFAULT_STATUSES,
         fmtEuro, fmtEuroShort, daysSince, escHtml, uuid, starsHTML, loadTableColumns,
-        nextEventForApp, localDateStr })`,
+        nextEventForApp, localDateStr,
+        mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
+        _gzipBytes, _gunzipBytes })`,
     sandbox
   );
   Object.assign(sandbox, exported);
@@ -371,22 +397,180 @@ test('sw.js APP_SHELL_URLS only lists files that actually exist', () => {
   }
 });
 
-// ─── Report ──────────────────────────────────────────────────────────────────
-console.log(`\n${passed} passed, ${failed} failed\n`);
-if (failed) {
-  for (const { name, err } of failures) {
-    console.log(`✗ ${name}`);
-    console.log(`  ${err.message}\n`);
-  }
-} else {
-  console.log('All checks passed.');
+// ─── QR-Geräte-Sync: mergeApps() ───────────────────────────────────────────────
+if (ctx) {
+  const app = (id, overrides = {}) => ({ id, company: 'X', updatedAt: '2026-01-01T00:00:00.000Z', ...overrides });
+
+  // ctx.mergeApps() runs inside the vm sandbox realm, so arrays/objects it *constructs*
+  // (the outer Array from Array.from(byId.values()), or a fresh {a,b,c} literal) carry
+  // that realm's Array/Object prototype - deepStrictEqual treats those as unequal to an
+  // outwardly-identical host-realm literal even though every value matches (same
+  // cross-realm quirk called out near the top of this file). Array.from(...) here is
+  // this process's Array.from, rebuilding a host-realm array around the same elements.
+  test('mergeApps: disjunkte IDs werden vereinigt', () => {
+    const result = Array.from(ctx.mergeApps([app('a')], [app('b')], 'newest'), a => a.id).sort();
+    assert.deepStrictEqual(result, ['a', 'b']);
+  });
+
+  test('mergeApps: leere eingehende Liste ist ein No-op', () => {
+    const local = [app('a'), app('b')];
+    assert.deepStrictEqual(Array.from(ctx.mergeApps(local, [], 'newest')), local);
+  });
+
+  test('mergeApps: leere lokale Liste übernimmt alles Eingehende', () => {
+    const incoming = [app('a'), app('b')];
+    assert.deepStrictEqual(Array.from(ctx.mergeApps([], incoming, 'newest')), incoming);
+  });
+
+  test('mergeApps "newest": neuerer Timestamp gewinnt, unabhängig von der Seite', () => {
+    const local    = [app('a', { position: 'alt', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    const incoming = [app('a', { position: 'neu', updatedAt: '2026-01-02T00:00:00.000Z' })];
+    assert.strictEqual(ctx.mergeApps(local, incoming, 'newest')[0].position, 'neu');
+    assert.strictEqual(ctx.mergeApps(incoming, local, 'newest')[0].position, 'neu');
+  });
+
+  test('mergeApps "preferIncoming": eingehende Seite gewinnt immer, auch wenn älter', () => {
+    const local    = [app('a', { position: 'lokal-neuer', updatedAt: '2026-01-05T00:00:00.000Z' })];
+    const incoming = [app('a', { position: 'eingehend-aelter', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    assert.strictEqual(ctx.mergeApps(local, incoming, 'preferIncoming')[0].position, 'eingehend-aelter');
+  });
+
+  test('mergeApps "preferLocal": lokale Seite gewinnt immer, auch wenn älter', () => {
+    const local    = [app('a', { position: 'lokal-aelter', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    const incoming = [app('a', { position: 'eingehend-neuer', updatedAt: '2026-01-05T00:00:00.000Z' })];
+    assert.strictEqual(ctx.mergeApps(local, incoming, 'preferLocal')[0].position, 'lokal-aelter');
+  });
+
+  test('mergeApps: identischer Timestamp auf beiden Seiten ist deterministisch (Tie-Breaker)', () => {
+    const local    = [app('a', { position: 'A', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    const incoming = [app('a', { position: 'B', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    const r1 = ctx.mergeApps(local, incoming, 'newest')[0].position;
+    const r2 = ctx.mergeApps(local, incoming, 'newest')[0].position;
+    const r3 = ctx.mergeApps(local, incoming, 'newest')[0].position;
+    assert.strictEqual(r1, r2);
+    assert.strictEqual(r2, r3);
+  });
+
+  test('mergeApps: fehlender/kaputter updatedAt fällt sicher zurück statt NaN-Vergleich zu brechen', () => {
+    const local    = [app('a', { position: 'lokal', updatedAt: undefined, createdAt: undefined })];
+    const incoming = [app('a', { position: 'eingehend', updatedAt: '2026-01-01T00:00:00.000Z' })];
+    // Eingehend hat einen echten Timestamp, lokal fällt auf 0 zurück -> eingehend muss gewinnen
+    assert.strictEqual(ctx.mergeApps(local, incoming, 'newest')[0].position, 'eingehend');
+  });
+
+  test('mergeApps: Löschung (Tombstone) pflanzt sich als "neuester Stand" fort', () => {
+    const local    = [app('a', { updatedAt: '2026-01-01T00:00:00.000Z' })];
+    const incoming = [app('a', { deletedAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' })];
+    const merged = ctx.mergeApps(local, incoming, 'newest');
+    assert.strictEqual(merged[0].deletedAt, '2026-01-05T00:00:00.000Z');
+  });
+
+  test('mergeApps: unabhängige Löschung auf beiden Seiten bleibt einfach gelöscht', () => {
+    const local    = [app('a', { deletedAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' })];
+    const incoming = [app('a', { deletedAt: '2026-01-03T00:00:00.000Z', updatedAt: '2026-01-03T00:00:00.000Z' })];
+    assert.ok(ctx.mergeApps(local, incoming, 'newest')[0].deletedAt);
+  });
+
+  // ─── _qrSummarizeMerge ────────────────────────────────────────────────────────
+  test('_qrSummarizeMerge liefert die betroffenen Einträge (nicht nur Zahlen) pro Kategorie', () => {
+    const before = [
+      app('a', { updatedAt: '2026-01-01T00:00:00.000Z' }),
+      app('b', { updatedAt: '2026-01-01T00:00:00.000Z' }),
+    ];
+    const merged = [
+      app('a', { updatedAt: '2026-01-01T00:00:00.000Z' }), // unverändert
+      app('b', { deletedAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }), // gelöscht
+      app('c', { updatedAt: '2026-01-02T00:00:00.000Z' }), // neu
+    ];
+    const summary = ctx._qrSummarizeMerge(before, merged);
+    assert.deepStrictEqual(Array.from(summary.added, a => a.id), ['c']);
+    assert.deepStrictEqual(Array.from(summary.updated, a => a.id), []);
+    assert.deepStrictEqual(Array.from(summary.deleted, a => a.id), ['b']);
+  });
+
+  // ─── QR-Chunk-Protokoll (_qrChecksum / _qrBuildChunks / _qrParseChunk) ────────
+  test('_qrChecksum ist deterministisch und erkennt ein verändertes Byte', () => {
+    const a = new Uint8Array([1, 2, 3, 4, 5]);
+    const b = new Uint8Array([1, 2, 9, 4, 5]);
+    assert.strictEqual(ctx._qrChecksum(a), ctx._qrChecksum(a));
+    assert.notStrictEqual(ctx._qrChecksum(a), ctx._qrChecksum(b));
+  });
+
+  test('_qrBuildChunks/_qrParseChunk: Round-Trip liefert die Originalbytes exakt zurück', () => {
+    for (const len of [0, 1, 699, 700, 701, 2500]) {
+      const original = new Uint8Array(len);
+      for (let i = 0; i < len; i++) original[i] = (i * 37 + 11) % 256;
+      const chunks = ctx._qrBuildChunks(original, 4242, true, 700);
+      const parsedInOrder = chunks.map(c => ctx._qrParseChunk(c));
+      assert.ok(parsedInOrder.every(Boolean), `len=${len}: alle Chunks sollten parsebar sein`);
+      const total = parsedInOrder[0].total;
+      assert.strictEqual(total, chunks.length);
+      // Reassemble in beliebiger (hier: umgekehrter) Reihenfolge - simuliert Kamera-Scans
+      // in nicht-linearer Reihenfolge
+      const byIndex = new Map(parsedInOrder.slice().reverse().map(p => [p.index, p]));
+      const reassembled = new Uint8Array(len);
+      let offset = 0;
+      for (let i = 0; i < total; i++) { reassembled.set(byIndex.get(i).payload, offset); offset += byIndex.get(i).payload.length; }
+      assert.deepStrictEqual(Array.from(reassembled), Array.from(original), `len=${len}: reassemblierte Bytes weichen ab`);
+    }
+  });
+
+  test('_qrParseChunk lehnt zu kurze/leere Buffer ab statt zu werfen', () => {
+    assert.strictEqual(ctx._qrParseChunk(new Uint8Array(0)), null);
+    assert.strictEqual(ctx._qrParseChunk(new Uint8Array(5)), null);
+    assert.strictEqual(ctx._qrParseChunk(null), null);
+  });
+
+  test('_qrParseChunk lehnt eine falsche Protokoll-Version ab (z.B. QR eines völlig anderen Formats)', () => {
+    const chunks = ctx._qrBuildChunks(new Uint8Array([1, 2, 3]), 1, false, 700);
+    const corrupted = chunks[0].slice();
+    corrupted[0] = 99; // fremde Version
+    assert.strictEqual(ctx._qrParseChunk(corrupted), null);
+  });
+
+  test('_qrParseChunk lehnt einen Frame mit verfälschter Prüfsumme ab (simulierter Fehl-Scan)', () => {
+    const chunks = ctx._qrBuildChunks(new Uint8Array([10, 20, 30, 40]), 1, false, 700);
+    const corrupted = chunks[0].slice();
+    corrupted[corrupted.length - 1] ^= 0xff; // letztes Payload-Byte kippen, Header/Prüfsumme bleibt
+    assert.strictEqual(ctx._qrParseChunk(corrupted), null);
+  });
+
+  test('_qrBuildChunks: unterschiedliche Session-IDs zweier Sync-Vorgänge bleiben unterscheidbar', () => {
+    const chunksA = ctx._qrBuildChunks(new Uint8Array([1]), 111, false, 700);
+    const chunksB = ctx._qrBuildChunks(new Uint8Array([1]), 222, false, 700);
+    assert.notStrictEqual(ctx._qrParseChunk(chunksA[0]).sessionId, ctx._qrParseChunk(chunksB[0]).sessionId);
+  });
+
+  // ─── gzip round trip (echtes CompressionStream/DecompressionStream aus Node) ──
+  asyncTest('_gzipBytes/_gunzipBytes: Round-Trip liefert die Originalbytes exakt zurück', async () => {
+    const original = new TextEncoder().encode('x'.repeat(5000) + 'Bewerbung Müller & Söhne öäü€');
+    const { bytes: compressed, gzipped } = await ctx._gzipBytes(original);
+    assert.ok(gzipped, 'CompressionStream sollte im Node-Test verfügbar sein');
+    assert.ok(compressed.length < original.length, 'stark repetitive Daten sollten spürbar kleiner werden');
+    const restored = await ctx._gunzipBytes(compressed, gzipped);
+    assert.deepStrictEqual(Array.from(restored), Array.from(original));
+  });
 }
 
-// app.js's own Init IIFE keeps running in the background inside the mocked vm context
-// after the (synchronous) tests above are done - it's real app startup code awaiting
-// idbReady/loadAll/etc, and it isn't mocked deeply enough to finish cleanly (no
-// getComputedStyle, no real IndexedDB). That's fine, nothing here depends on it
-// completing - but left alone it can throw asynchronously and cause a misleading
-// nonzero exit after this report already printed success. Exit explicitly now instead
-// of letting the event loop decide.
-process.exit(failed ? 1 : 0);
+// ─── Report ──────────────────────────────────────────────────────────────────
+(async () => {
+  await Promise.all(pendingAsync);
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  if (failed) {
+    for (const { name, err } of failures) {
+      console.log(`✗ ${name}`);
+      console.log(`  ${err.message}\n`);
+    }
+  } else {
+    console.log('All checks passed.');
+  }
+
+  // app.js's own Init IIFE keeps running in the background inside the mocked vm context
+  // after the (synchronous) tests above are done - it's real app startup code awaiting
+  // idbReady/loadAll/etc, and it isn't mocked deeply enough to finish cleanly (no
+  // getComputedStyle, no real IndexedDB). That's fine, nothing here depends on it
+  // completing - but left alone it can throw asynchronously and cause a misleading
+  // nonzero exit after this report already printed success. Exit explicitly now instead
+  // of letting the event loop decide.
+  process.exit(failed ? 1 : 0);
+})();

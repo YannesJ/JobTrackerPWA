@@ -1070,6 +1070,104 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 }
 .modal-footer .btn { flex: 1; }
 
+/* ─── Lokaler Geräte-Sync (QR) ─────────────────────────────────────────────── */
+/* Reines Schwarz-Weiß-QR-Raster bleibt (zuverlässig für jeden Standard-Decoder) -
+   der pulsierende Farbverlauf drumherum sorgt für den "sieht nicht nach
+   technischem Scanner aus"-Effekt, ohne die Modul-Farben selbst anzufassen.
+   --accent-rgb kommt aus dem aktuell gewählten Skin, passt sich also automatisch an. */
+.qr-glow {
+  position: relative;
+  display: inline-block;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  isolation: isolate;
+}
+.qr-glow::before {
+  content: '';
+  position: absolute; inset: -18px;
+  z-index: -1;
+  border-radius: var(--r-lg);
+  background: conic-gradient(from var(--qr-glow-angle, 0deg),
+    rgb(var(--accent-rgb) / .55), transparent 30%, transparent 60%, rgb(var(--accent-rgb) / .55));
+  filter: blur(18px);
+  animation: qrGlowSpin 5s linear infinite;
+}
+@keyframes qrGlowSpin { to { --qr-glow-angle: 360deg; } }
+@property --qr-glow-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.qr-glow canvas {
+  display: block;
+  /* Modul-Anzahl (und damit die Pixelgröße) hängt von der Datenmenge ab - auf
+     schmalen Handy-Viewports nie breiter als der verfügbare Platz im Modal. */
+  max-width: 100%;
+  height: auto;
+  border-radius: calc(var(--r-lg) - 4px);
+  background: #fff;
+  box-shadow: 0 2px 14px rgb(0 0 0 / .12);
+}
+
+.qr-progress-track {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+.qr-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / .7), var(--accent));
+  transition: width 160ms ease;
+}
+
+.qr-scan-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 320px;
+  margin: 0 auto;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: #000;
+}
+.qr-scan-frame video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.qr-scan-frame::after {
+  content: '';
+  position: absolute; inset: 10%;
+  border: 2px solid rgb(var(--accent-rgb) / .85);
+  border-radius: var(--r-md);
+  box-shadow: 0 0 0 999px rgb(0 0 0 / .35);
+  animation: qrScanPulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes qrScanPulse {
+  0%, 100% { border-color: rgb(var(--accent-rgb) / .55); }
+  50%      { border-color: rgb(var(--accent-rgb) / 1); }
+}
+
+.qr-result-details {
+  margin-top: .75rem;
+  text-align: left;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: .625rem;
+}
+.qr-result-group + .qr-result-group { margin-top: .625rem; }
+.qr-result-group-title {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); margin-bottom: .25rem;
+}
+.qr-result-details ul { list-style: none; }
+.qr-result-details li {
+  font-size: .8rem; color: var(--text-secondary);
+  padding: .25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.qr-result-details li:last-child { border-bottom: none; }
+
 /* ─── Form Grid ────────────────────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
 .form-grid .col-span-2 { grid-column: 1 / -1; }

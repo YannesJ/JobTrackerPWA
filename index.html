@@ -606,6 +606,46 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Geräte-Sync <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-muted)">(lokal, ganz ohne Internet)</span></div>
+        <div class="card card-sm">
+          <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:.875rem;line-height:1.5">Überträgt deine Bewerbungen direkt zwischen zwei eigenen Geräten per Kamera - kein Internet, kein Server, kein Cloud-Konto nötig. Beide Geräte brauchen nur eine Kamera.</p>
+
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <h3 style="display:flex;align-items:center;gap:7px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="21"/><line x1="21" y1="14" x2="21" y2="21"/><line x1="17.5" y1="14" x2="17.5" y2="17.5"/><line x1="14" y1="17.5" x2="21" y2="17.5"/></svg>
+                An anderes Gerät senden
+              </h3>
+              <p>Zeigt einen Code auf diesem Gerät, den du mit dem anderen Gerät scannst. Überträgt deine Änderungen, ohne dort etwas zu löschen.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="openQRSendModal()">Anzeigen</button>
+          </div>
+
+          <div class="settings-row" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+            <div class="settings-row-info">
+              <h3 style="display:flex;align-items:center;gap:7px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                Von anderem Gerät empfangen
+              </h3>
+              <p>Scannt den Code des anderen Geräts (dort vorher "Anzeigen" antippen). Bei Widersprüchen gewinnt die Version vom anderen Gerät.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="openQRScanModal('preferIncoming')">Scannen</button>
+          </div>
+
+          <div class="settings-row" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
+            <div class="settings-row-info">
+              <h3 style="display:flex;align-items:center;gap:7px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Beide Geräte abgleichen
+              </h3>
+              <p>Scannt den Code des anderen Geräts (dort vorher "Anzeigen" antippen) und führt Änderungen von beiden Seiten zusammen - für den Fall, dass auf beiden etwas geändert wurde.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="openQRScanModal('newest')">Scannen</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title" style="color:#ef4444">Gefahrenzone</div>
         <div class="card card-sm">
           <div class="settings-row">
@@ -979,6 +1019,71 @@
       <button class="btn btn-ghost" style="color:#ef4444" onclick="clearGoogleDriveCredentials()">Entfernen</button>
       <button class="btn btn-ghost" style="margin-left:auto" onclick="hideModal('gd-credentials-modal')">Abbrechen</button>
       <button class="btn btn-primary" onclick="saveGoogleDriveCredentials()">Speichern &amp; verbinden</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR GERÄTE-SYNC: SENDEN (zeigt rotierende QR-Codes) -->
+<div id="qr-send-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeQRSendModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-header">
+      <div>
+        <h2 style="font-size:1rem;margin-bottom:2px">QR-Code anzeigen</h2>
+        <p style="font-size:.75rem;color:var(--text-muted)" id="qr-send-count"></p>
+      </div>
+      <button class="btn btn-icon" onclick="closeQRSendModal()" title="Schließen" aria-label="Schließen">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding-top:.5rem;text-align:center">
+      <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:.875rem">
+        Jeder, der diesen Code scannt und die App installiert hat, kann die Daten empfangen - wie bei jedem Pairing-Code nicht in der Öffentlichkeit zeigen.
+      </p>
+      <div class="qr-glow">
+        <canvas id="qr-send-canvas"></canvas>
+      </div>
+      <div class="qr-progress-track" style="margin-top:.875rem">
+        <div class="qr-progress-bar" id="qr-send-progress"></div>
+      </div>
+      <p style="font-size:.8rem;color:var(--text-secondary);margin-top:.75rem">Halte das andere Gerät über diesen Code und tippe dort auf <strong>"Scannen"</strong>.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" style="margin-left:auto" onclick="closeQRSendModal()">Fertig</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR GERÄTE-SYNC: EMPFANGEN/ABGLEICHEN (scannt den Code des anderen Geräts) -->
+<div id="qr-scan-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeQRScanModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-header">
+      <h2 style="font-size:1rem">QR-Code scannen</h2>
+      <button class="btn btn-icon" onclick="closeQRScanModal()" title="Abbrechen" aria-label="Abbrechen">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding-top:.5rem;text-align:center">
+      <div id="qr-scan-live">
+        <div class="qr-scan-frame">
+          <video id="qr-scan-video" autoplay playsinline muted></video>
+        </div>
+        <div class="qr-progress-track" style="margin-top:.875rem">
+          <div class="qr-progress-bar" id="qr-scan-progress"></div>
+        </div>
+        <p style="font-size:.8rem;color:var(--text-secondary);margin-top:.75rem" id="qr-scan-progress-text">Suche QR-Code...</p>
+        <p style="font-size:.72rem;color:var(--text-muted);margin-top:.375rem">Richte die Kamera auf den Code, den das andere Gerät gerade anzeigt.</p>
+      </div>
+      <div id="qr-scan-result" class="hidden">
+        <svg id="qr-scan-result-icon" class="hidden" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin:0 auto .625rem"><circle cx="12" cy="12" r="10"/><polyline points="8 12 11 15 16 9"/></svg>
+        <p style="font-size:.95rem;font-weight:600" id="qr-scan-result-summary"></p>
+        <p style="font-size:.75rem;color:var(--text-muted);margin-top:.25rem" id="qr-scan-result-hint">Noch nicht gespeichert - erst nach "Übernehmen" ändert sich lokal etwas.</p>
+        <button type="button" class="btn btn-ghost btn-xs hidden" id="qr-scan-details-toggle" style="margin-top:.75rem" onclick="toggleQrScanDetails()">Details anzeigen</button>
+        <div id="qr-scan-result-details" class="qr-result-details hidden"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="qr-scan-cancel-btn" onclick="closeQRScanModal()">Abbrechen</button>
+      <button class="btn btn-primary hidden" id="qr-scan-commit-btn" onclick="_qrCommitScan()">Übernehmen</button>
     </div>
   </div>
 </div>

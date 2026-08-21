@@ -732,7 +732,10 @@ function toggleSalaryBlur() {
 // ─── DB CRUD ──────────────────────────────────────────────────────────────────
 async function loadAll() {
   const pairs = await idbEntries(DB);
-  State.all = pairs.map(([,v]) => v);
+  // Soft-gelöschte Einträge (deletedAt gesetzt) bleiben im IDB-Store, damit ihre
+  // Löschung sich beim Geräte-Sync (mergeApps(), siehe unten) auf andere Geräte
+  // fortpflanzt, werden hier aber aus dem UI-sichtbaren State herausgefiltert.
+  State.all = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
   applyFilters();
   updateCounts();
   updateBadge(); // refresh badge count whenever data changes
@@ -746,10 +749,32 @@ async function saveApp(app) {
 }
 
 async function deleteApp(id) {
-  await idbDel(id, DB);
+  // Soft-delete statt idbDel: der Eintrag bleibt als Tombstone im Store, damit
+  // ein späterer Geräte-Sync die Löschung auch auf dem anderen Gerät nachvollzieht
+  // (siehe mergeApps()) statt ihn dort versehentlich wiederherzustellen.
+  const app = await idbGet(id, DB);
+  if (app) {
+    app.deletedAt = nowISO();
+    app.updatedAt = app.deletedAt;
+    await idbSet(id, app, DB);
+  }
   await deleteReminder(id); // remove any associated reminder
   await loadAll();
   toast('Bewerbung gelöscht', 'info');
+}
+
+// Tombstones (soft-gelöschte Einträge) werden nach TOMBSTONE_RETENTION_DAYS
+// endgültig aus dem IDB-Store entfernt, damit er nicht unbegrenzt wächst. Läuft
+// einmal beim App-Start (siehe Init unten), nicht bei jedem loadAll().
+const TOMBSTONE_RETENTION_DAYS = 90;
+async function cleanupOldTombstones() {
+  const cutoff = Date.now() - TOMBSTONE_RETENTION_DAYS * 86400000;
+  const pairs = await idbEntries(DB);
+  for (const [id, app] of pairs) {
+    if (app.deletedAt && new Date(app.deletedAt).getTime() < cutoff) {
+      await idbDel(id, DB);
+    }
+  }
 }
 
 // ─── Demo-Daten für neue, leere Installationen ─────────────────────────────────
@@ -1658,7 +1683,7 @@ function checkBackupReminder() {
 
 async function exportData() {
   const pairs = await idbEntries(DB);
-  const data  = pairs.map(([,v]) => v);
+  const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
   // Statuskategorien (Name, Farbe, Zähl-Kind) und die Kanban-Sortierung (inkl. per
   // Drag&Drop gesetzter "Eigener Reihenfolge") gehören mit in den Export, sonst sieht
@@ -1677,7 +1702,7 @@ async function exportData() {
 
 async function exportCSV() {
   const pairs = await idbEntries(DB);
-  const data  = pairs.map(([,v]) => v);
+  const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
 
   // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
@@ -2806,9 +2831,10 @@ function _gdEnsureToken() {
 
 /** Core sync logic: compare, conflict-resolve, upload or download */
 async function _gdRunSync() {
-  // 1. Read local DB
+  // 1. Read local DB (Tombstones von deleteApp() ausschließen - die sind nur für
+  //    den lokalen Geräte-Sync gedacht, sollen aber nicht ins Drive-Backup)
   const localPairs = await idbEntries(DB);
-  const localData  = localPairs.map(([, v]) => v);
+  const localData  = localPairs.map(([, v]) => v).filter(a => !a.deletedAt);
   const localTs    = localData.length
     ? Math.max(...localData.map(a => new Date(a.updatedAt || a.createdAt || 0).getTime()))
     : 0;
@@ -3005,6 +3031,463 @@ function clearGoogleDriveCredentials() {
 }
 
 function syncToDropbox() { toast('Dropbox Sync - Coming Soon', 'info'); }
+
+// ─── Lokaler Geräte-Sync (animierter QR-Code, kein Server, keine dritte Partei) ─
+// Überträgt Bewerbungsdaten direkt zwischen zwei Geräten per Kamera - keine
+// Internetverbindung, kein Account, keine dritte Partei sieht die Daten. Ein Gerät
+// "zeigt" (broadcastet laufend seine eigenen Daten als rotierende QR-Codes), das
+// andere "scannt" (liest die Codes ein und führt sie mit den eigenen Daten zusammen).
+// Zeigen ist dabei bewusst modus-unabhängig: welche Konfliktregel gilt, entscheidet
+// ausschließlich die scannende Seite (siehe QR_SYNC-Buttons in den Einstellungen).
+//
+// Chunk-Format (pro QR-Frame, alles Rohbytes, big-endian):
+//   Byte 0      Protokoll-Version
+//   Byte 1      Flags (Bit 0 = gzip-komprimiert)
+//   Byte 2-3    Session-ID (zufällig pro Sende-Vorgang, filtert Frames einer
+//               fremden/alten Übertragung heraus)
+//   Byte 4-5    Gesamtanzahl Chunks
+//   Byte 6-7    Chunk-Index
+//   Byte 8-9    Nutzlast-Länge
+//   Byte 10-11  Fletcher-16-Prüfsumme der Nutzlast (zusätzlich zur ohnehin in jedem
+//               QR-Code eingebauten Reed-Solomon-Fehlerkorrektur - Verteidigung in
+//               der Tiefe gegen einen falsch gelesenen Frame)
+//   Byte 12+    Nutzlast
+// Frames rotieren fortlaufend durch alle Chunks, damit die scannende Seite sie in
+// beliebiger Reihenfolge/mehrfach verpasst aufsammeln kann statt exakt den nächsten
+// Index treffen zu müssen.
+
+const QR_SYNC_PROTOCOL_VERSION = 1;
+const QR_SYNC_SCHEMA_VERSION   = 1; // Version des JSON-Payload-Formats (unabhängig vom Chunk-Protokoll)
+const QR_SYNC_HEADER_BYTES     = 12;
+const QR_SYNC_CHUNK_PAYLOAD_BYTES = 700;
+const QR_SYNC_FRAME_INTERVAL_MS   = 220; // ~4.5 Frames/Sek. - zuverlässig scanbar
+const QR_SYNC_MAX_LOOP_MS = 5 * 60 * 1000; // Sicherheits-Stop, falls der Nutzer das Modal vergisst
+
+// ─── Reine, testbare Helfer ─────────────────────────────────────────────────────
+
+/** Fletcher-16-Prüfsumme - einfach, schnell, ausreichend um einen falsch gelesenen Frame zu erkennen */
+function _qrChecksum(bytes) {
+  let a = 0, b = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    a = (a + bytes[i]) % 255;
+    b = (b + a) % 255;
+  }
+  return (b << 8) | a;
+}
+
+/** Teilt komprimierte Rohbytes in QR-fähige Chunks mit Header auf (siehe Format oben) */
+function _qrBuildChunks(payloadBytes, sessionId, gzipped, chunkSize = QR_SYNC_CHUNK_PAYLOAD_BYTES) {
+  const total = Math.max(1, Math.ceil(payloadBytes.length / chunkSize));
+  const chunks = [];
+  for (let i = 0; i < total; i++) {
+    const slice = payloadBytes.subarray(i * chunkSize, i * chunkSize + chunkSize);
+    const buf = new Uint8Array(QR_SYNC_HEADER_BYTES + slice.length);
+    buf[0] = QR_SYNC_PROTOCOL_VERSION;
+    buf[1] = gzipped ? 1 : 0;
+    buf[2] = (sessionId >> 8) & 0xff; buf[3] = sessionId & 0xff;
+    buf[4] = (total >> 8) & 0xff;     buf[5] = total & 0xff;
+    buf[6] = (i >> 8) & 0xff;         buf[7] = i & 0xff;
+    buf[8] = (slice.length >> 8) & 0xff; buf[9] = slice.length & 0xff;
+    const cs = _qrChecksum(slice);
+    buf[10] = (cs >> 8) & 0xff; buf[11] = cs & 0xff;
+    buf.set(slice, QR_SYNC_HEADER_BYTES);
+    chunks.push(buf);
+  }
+  return chunks;
+}
+
+/** Kehrt _qrBuildChunks() um; gibt null bei falschem Format/Prüfsummenfehler zurück statt zu werfen */
+function _qrParseChunk(bytes) {
+  if (!bytes || bytes.length < QR_SYNC_HEADER_BYTES) return null;
+  if (bytes[0] !== QR_SYNC_PROTOCOL_VERSION) return null;
+  const gzipped   = bytes[1] === 1;
+  const sessionId = (bytes[2] << 8) | bytes[3];
+  const total     = (bytes[4] << 8) | bytes[5];
+  const index     = (bytes[6] << 8) | bytes[7];
+  const len       = (bytes[8] << 8) | bytes[9];
+  const checksum  = (bytes[10] << 8) | bytes[11];
+  if (total === 0 || index >= total) return null;
+  const payload = bytes.subarray(QR_SYNC_HEADER_BYTES, QR_SYNC_HEADER_BYTES + len);
+  if (payload.length !== len) return null; // Frame unvollständig gelesen
+  if (_qrChecksum(payload) !== checksum) return null; // Frame verfälscht gelesen
+  return { gzipped, sessionId, total, index, payload };
+}
+
+/** gzip-Komprimierung; degradiert ohne Fehler auf "unkomprimiert", falls CompressionStream fehlt */
+async function _gzipBytes(bytes) {
+  if (typeof CompressionStream === 'undefined') return { bytes, gzipped: false };
+  const cs = new CompressionStream('gzip');
+  const writer = cs.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const buf = await new Response(cs.readable).arrayBuffer();
+  return { bytes: new Uint8Array(buf), gzipped: true };
+}
+async function _gunzipBytes(bytes, gzipped) {
+  if (!gzipped) return bytes;
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const buf = await new Response(ds.readable).arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+/**
+ * Führt zwei Bewerbungslisten pro Eintrag (id) zusammen statt eine Seite komplett zu
+ * überschreiben - Einträge, die nur auf einer Seite existieren, bleiben in jedem Modus
+ * erhalten. conflictRule bestimmt nur, wer bei Einträgen gewinnt, die auf beiden Seiten
+ * mit unterschiedlichem Inhalt vorkommen:
+ *   'preferIncoming' - die gescannten/eingehenden Daten gewinnen immer
+ *   'preferLocal'    - die bereits lokal vorhandenen Daten gewinnen immer
+ *   'newest'         - der Eintrag mit dem neueren updatedAt gewinnt (echtes Merging)
+ * deletedAt wird wie jedes andere Feld behandelt, damit sich Löschungen (Tombstones,
+ * siehe deleteApp()) korrekt zur Gegenseite fortpflanzen.
+ */
+function mergeApps(localApps, incomingApps, conflictRule) {
+  const byId = new Map();
+  for (const a of localApps) byId.set(a.id, a);
+  for (const incoming of incomingApps) {
+    const local = byId.get(incoming.id);
+    if (!local) { byId.set(incoming.id, incoming); continue; }
+    if (local === incoming) continue;
+    let winner;
+    if (conflictRule === 'preferIncoming') {
+      winner = incoming;
+    } else if (conflictRule === 'preferLocal') {
+      winner = local;
+    } else { // 'newest'
+      const lt = new Date(local.updatedAt || local.createdAt || 0).getTime() || 0;
+      const it = new Date(incoming.updatedAt || incoming.createdAt || 0).getTime() || 0;
+      if (it > lt) winner = incoming;
+      else if (lt > it) winner = local;
+      // Exakt gleicher Timestamp (z.B. zwei Edits in derselben Sekunde auf beiden
+      // Geräten): deterministischer Tie-Breaker, damit wiederholtes Mergen immer
+      // dasselbe Ergebnis liefert statt bei jedem Lauf zufällig zu wechseln.
+      else winner = incoming.id < local.id ? incoming : local;
+    }
+    byId.set(incoming.id, winner);
+  }
+  return Array.from(byId.values());
+}
+
+/** Ermittelt neu/aktualisiert/gelöscht zwischen dem Stand vor und nach einem Merge - als
+ *  Listen der betroffenen Einträge (nicht nur Zahlen), damit die Ergebnis-Anzeige im UI
+ *  konkret zeigen kann WAS sich geändert hat statt nur DASS sich etwas geändert hat -
+ *  ein Sync soll nie wie stiller Datenverlust wirken. */
+function _qrSummarizeMerge(beforeApps, mergedApps) {
+  const before = new Map(beforeApps.map(a => [a.id, a]));
+  const added = [], updated = [], deleted = [];
+  for (const app of mergedApps) {
+    const prev = before.get(app.id);
+    if (!prev) { if (!app.deletedAt) added.push(app); continue; }
+    if (prev.deletedAt) continue; // war schon vorher gelöscht, zählt nicht erneut
+    if (app.deletedAt) { deleted.push(app); continue; }
+    if (prev.updatedAt !== app.updatedAt) updated.push(app);
+  }
+  return { added, updated, deleted };
+}
+
+// ─── Vendor-Libraries (lazy geladen, wie _ensureXLSX()) ─────────────────────────
+let _qrLibsReady = null;
+function _ensureQRLibs() {
+  if (typeof qrcode !== 'undefined' && typeof jsQR !== 'undefined') return Promise.resolve();
+  if (_qrLibsReady) return _qrLibsReady;
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload  = resolve;
+    s.onerror = () => reject(new Error('QR-Bibliothek konnte nicht geladen werden'));
+    document.head.appendChild(s);
+  });
+  _qrLibsReady = Promise.all([
+    loadScript('vendor/qr/qrcode-generator.min.js'),
+    loadScript('vendor/qr/jsQR.min.js'),
+  ]).catch(err => { _qrLibsReady = null; throw err; });
+  return _qrLibsReady;
+}
+
+// ─── Senden (zeigt rotierende QR-Codes, unabhängig vom späteren Konfliktmodus) ──
+let _qrSend = null; // { timer, chunks, frameIndex, startedAt }
+
+async function openQRSendModal() {
+  try {
+    await _ensureQRLibs();
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const pairs = await idbEntries(DB); // inkl. Tombstones, damit Löschungen mit übertragen werden
+  const apps  = pairs.map(([, v]) => v);
+  if (!apps.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
+
+  const json  = JSON.stringify({ v: QR_SYNC_SCHEMA_VERSION, apps });
+  const raw   = new TextEncoder().encode(json);
+  const { bytes, gzipped } = await _gzipBytes(raw);
+  const sessionId = Math.floor(Math.random() * 65536);
+  const chunks = _qrBuildChunks(bytes, sessionId, gzipped);
+
+  _qrSend = { chunks, frameIndex: 0, startedAt: Date.now(), timer: null };
+  document.getElementById('qr-send-count').textContent = `${apps.length} Einträge - ${chunks.length} Code${chunks.length === 1 ? '' : 's'}`;
+  showModal('qr-send-modal');
+  _qrRenderSendFrame();
+  _qrSend.timer = setInterval(_qrRenderSendFrame, QR_SYNC_FRAME_INTERVAL_MS);
+}
+
+function _qrRenderSendFrame() {
+  if (!_qrSend) return;
+  if (Date.now() - _qrSend.startedAt > QR_SYNC_MAX_LOOP_MS) {
+    toast('Übertragung nach 5 Minuten automatisch beendet', 'info');
+    closeQRSendModal();
+    return;
+  }
+  const chunk = _qrSend.chunks[_qrSend.frameIndex % _qrSend.chunks.length];
+  const binaryString = String.fromCharCode(...chunk);
+  const qr = qrcode(0, 'M');
+  qr.addData(binaryString, 'Byte');
+  qr.make();
+
+  const canvas = document.getElementById('qr-send-canvas');
+  const n = qr.getModuleCount();
+  const scale = Math.max(3, Math.floor(280 / n));
+  const quiet = 4;
+  const size = (n + quiet * 2) * scale;
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#0f172a';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+    }
+  }
+
+  const progressEl = document.getElementById('qr-send-progress');
+  if (progressEl) progressEl.style.width = `${((_qrSend.frameIndex % _qrSend.chunks.length) + 1) / _qrSend.chunks.length * 100}%`;
+  _qrSend.frameIndex++;
+}
+
+function closeQRSendModal() {
+  if (_qrSend?.timer) clearInterval(_qrSend.timer);
+  _qrSend = null;
+  hideModal('qr-send-modal');
+}
+
+// ─── Empfangen (scannt QR-Codes des anderen Geräts, führt sie zusammen) ─────────
+let _qrScan = null; // { stream, rafId, canvas, ctx, sessionId, collected: Map, conflictRule, pending? }
+
+async function openQRScanModal(conflictRule) {
+  try {
+    await _ensureQRLibs();
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('Dieses Gerät/dieser Browser unterstützt keinen Kamera-Zugriff', 'error');
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (err) {
+    toast('Kamera-Zugriff wird für den Geräte-Sync benötigt. Bitte in den Browser-Einstellungen erlauben.', 'error');
+    return;
+  }
+
+  const video = document.getElementById('qr-scan-video');
+  video.srcObject = stream;
+  await video.play();
+
+  const canvas = document.createElement('canvas');
+  _qrScan = { stream, canvas, ctx: canvas.getContext('2d', { willReadFrequently: true }),
+              sessionId: null, collected: new Map(), conflictRule, rafId: null };
+  document.getElementById('qr-scan-progress-text').textContent = 'Suche QR-Code...';
+  showModal('qr-scan-modal');
+  _qrScanTick(video);
+}
+
+function _qrScanTick(video) {
+  if (!_qrScan) return;
+  const { canvas, ctx } = _qrScan;
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const result = jsQR(frame.data, frame.width, frame.height);
+    if (result) _qrHandleScannedFrame(new Uint8Array(result.binaryData));
+  }
+  if (_qrScan) _qrScan.rafId = requestAnimationFrame(() => _qrScanTick(video));
+}
+
+function _qrHandleScannedFrame(bytes) {
+  const parsed = _qrParseChunk(bytes);
+  if (!parsed) return; // kein/kaputter Sync-Code - einfach ignorieren, nächster Frame kommt
+  // Erste gültige Session sperrt sich ein - Frames einer fremden/alten Übertragung,
+  // die zufällig noch im Kamerabild auftaucht, werden danach ignoriert.
+  if (_qrScan.sessionId === null) _qrScan.sessionId = parsed.sessionId;
+  if (parsed.sessionId !== _qrScan.sessionId) return;
+
+  _qrScan.collected.set(parsed.index, parsed);
+  const total = parsed.total;
+  const got   = _qrScan.collected.size;
+  const progressText = document.getElementById('qr-scan-progress-text');
+  if (progressText) progressText.textContent = `${got} von ${total} Code${total === 1 ? '' : 's'} empfangen`;
+  const progressBar = document.getElementById('qr-scan-progress');
+  if (progressBar) progressBar.style.width = `${(got / total) * 100}%`;
+
+  if (got >= total) _qrFinishScan(total).catch(err => {
+    console.error('[QR-Sync]', err);
+    toast('Sync fehlgeschlagen: ' + (err?.message || err), 'error');
+    closeQRScanModal();
+  });
+}
+
+async function _qrFinishScan(total) {
+  const ordered = [];
+  for (let i = 0; i < total; i++) {
+    const chunk = _qrScan.collected.get(i);
+    if (!chunk) return; // sollte durch den got>=total-Check oben nicht passieren
+    ordered.push(chunk);
+  }
+  const gzipped = ordered[0].gzipped;
+  const totalLen = ordered.reduce((n, c) => n + c.payload.length, 0);
+  const combined = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of ordered) { combined.set(c.payload, offset); offset += c.payload.length; }
+
+  const raw = await _gunzipBytes(combined, gzipped);
+  const text = new TextDecoder().decode(raw);
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { throw new Error('Kein gültiger Sync-Code'); }
+  if (!parsed || parsed.v !== QR_SYNC_SCHEMA_VERSION || !Array.isArray(parsed.apps)) {
+    throw new Error('Unbekanntes oder inkompatibles Sync-Format');
+  }
+
+  const localPairs = await idbEntries(DB);
+  const localApps  = localPairs.map(([, v]) => v);
+  const merged  = mergeApps(localApps, parsed.apps, _qrScan.conflictRule);
+  const summary = _qrSummarizeMerge(localApps, merged);
+
+  // Bewusst noch KEIN idbSet() hier - erst eine Vorschau zeigen und den Nutzer aktiv
+  // bestätigen lassen (_qrCommitScan()), bevor sich lokal überhaupt etwas ändert. Ein
+  // korrekt gescannter/entschlüsselter Code allein reicht nicht als Freigabe.
+  _qrStopCamera();
+  _qrScan.pending = { merged, summary, beforeApps: localApps };
+  document.getElementById('qr-scan-live').classList.add('hidden');
+  document.getElementById('qr-scan-result').classList.remove('hidden');
+  document.getElementById('qr-scan-cancel-btn').textContent = 'Verwerfen';
+  document.getElementById('qr-scan-commit-btn').classList.remove('hidden');
+  _qrRenderResultSummary(summary, 'Bereit zum Übernehmen:');
+}
+
+/** Einzige Stelle, die beim Geräte-Sync tatsächlich idbSet() aufruft - erst nach
+ *  expliziter Bestätigung der zuvor angezeigten Vorschau (siehe _qrFinishScan()). */
+async function _qrCommitScan() {
+  const pending = _qrScan?.pending;
+  if (!pending) return;
+  const { merged, summary, beforeApps } = pending;
+  for (const app of merged) await idbSet(app.id, app, DB);
+  await loadAll();
+
+  document.getElementById('qr-scan-commit-btn').classList.add('hidden');
+  document.getElementById('qr-scan-cancel-btn').textContent = 'Fertig';
+  document.getElementById('qr-scan-result-icon').classList.remove('hidden');
+  document.getElementById('qr-scan-result-hint').textContent = 'Übernommen und lokal gespeichert.';
+  _qrRenderResultSummary(summary, null);
+
+  const beforeMap = new Map(beforeApps.map(a => [a.id, a]));
+  const parts = [];
+  if (summary.added.length)   parts.push(`${summary.added.length} neu`);
+  if (summary.updated.length) parts.push(`${summary.updated.length} aktualisiert`);
+  if (summary.deleted.length) parts.push(`${summary.deleted.length} gelöscht`);
+  // Zusätzliches Sicherheitsnetz zur Vorschau: falls nach dem Übernehmen doch etwas
+  // falsch aussieht, macht "Rückgängig" exakt diesen einen Sync wieder rückgängig -
+  // genau der Mechanismus, den die App an anderer Stelle (z.B. Status ändern) schon nutzt.
+  toast(
+    parts.length ? `Sync übernommen: ${parts.join(', ')}` : 'Sync übernommen - keine Änderungen',
+    'success',
+    parts.length ? { actionLabel: 'Rückgängig', onAction: () => _qrUndoSync(beforeMap, summary) } : {}
+  );
+  _qrScan = null; // dieser Sync-Vorgang ist damit endgültig abgeschlossen
+}
+
+/** Macht genau den zuletzt über "Rückgängig" angestoßenen Sync wieder rückgängig. */
+async function _qrUndoSync(beforeMap, summary) {
+  for (const app of summary.added) await idbDel(app.id, DB);
+  for (const app of [...summary.updated, ...summary.deleted]) {
+    const prev = beforeMap.get(app.id);
+    if (prev) await idbSet(app.id, prev, DB);
+  }
+  await loadAll();
+  toast('Sync rückgängig gemacht', 'info');
+}
+
+/** Rendert die Zusammenfassung (mit optionalem Vorschau-Präfix) + aufklappbare Details. */
+function _qrRenderResultSummary(summary, prefix) {
+  const parts = [];
+  if (summary.added.length)   parts.push(`${summary.added.length} neu`);
+  if (summary.updated.length) parts.push(`${summary.updated.length} aktualisiert`);
+  if (summary.deleted.length) parts.push(`${summary.deleted.length} gelöscht`);
+  const text = parts.length ? parts.join(' · ') : 'Keine Änderungen - beide Geräte waren bereits auf demselben Stand';
+  document.getElementById('qr-scan-result-summary').textContent = prefix ? `${prefix} ${text}` : text;
+
+  const label = (app) => escHtml(`${app.company || 'Ohne Firma'}${app.position ? ' - ' + app.position : ''}`);
+  const groups = [
+    ['Neu', summary.added],
+    ['Aktualisiert', summary.updated],
+    ['Gelöscht', summary.deleted],
+  ].filter(([, list]) => list.length);
+
+  const toggleBtn = document.getElementById('qr-scan-details-toggle');
+  const detailsEl = document.getElementById('qr-scan-result-details');
+  if (!groups.length) {
+    toggleBtn.classList.add('hidden');
+    detailsEl.innerHTML = '';
+    detailsEl.classList.add('hidden');
+  } else {
+    toggleBtn.classList.remove('hidden');
+    toggleBtn.textContent = 'Details anzeigen';
+    detailsEl.classList.add('hidden');
+    detailsEl.innerHTML = groups.map(([title, list]) => `
+      <div class="qr-result-group">
+        <div class="qr-result-group-title">${title} (${list.length})</div>
+        <ul>${list.map(a => `<li>${label(a)}</li>`).join('')}</ul>
+      </div>
+    `).join('');
+  }
+}
+
+function toggleQrScanDetails() {
+  const detailsEl = document.getElementById('qr-scan-result-details');
+  const toggleBtn = document.getElementById('qr-scan-details-toggle');
+  const nowHidden = detailsEl.classList.toggle('hidden');
+  toggleBtn.textContent = nowHidden ? 'Details anzeigen' : 'Details ausblenden';
+}
+
+function _qrStopCamera() {
+  if (_qrScan?.rafId) cancelAnimationFrame(_qrScan.rafId);
+  if (_qrScan?.stream) _qrScan.stream.getTracks().forEach(t => t.stop());
+}
+
+function closeQRScanModal() {
+  // Egal in welcher Phase (Live-Scan / ungespeicherte Vorschau / nach dem Übernehmen) -
+  // schließen ist hier immer sicher: eine noch offene Vorschau wurde nie gespeichert
+  // (siehe _qrFinishScan()/_qrCommitScan()), es geht also nie versehentlich etwas verloren.
+  _qrStopCamera();
+  _qrScan = null;
+  hideModal('qr-scan-modal');
+  // Für den nächsten Aufruf zurück auf die Live-Scan-Ansicht setzen, damit nicht kurz
+  // das alte Ergebnis der letzten Übertragung aufblitzt, bevor die Kamera anläuft.
+  document.getElementById('qr-scan-live').classList.remove('hidden');
+  document.getElementById('qr-scan-result').classList.add('hidden');
+  document.getElementById('qr-scan-cancel-btn').textContent = 'Abbrechen';
+  document.getElementById('qr-scan-commit-btn').classList.add('hidden');
+  document.getElementById('qr-scan-result-icon').classList.add('hidden');
+  document.getElementById('qr-scan-result-hint').textContent = 'Noch nicht gespeichert - erst nach "Übernehmen" ändert sich lokal etwas.';
+}
 
 // ─── Share Target ─────────────────────────────────────────────────────────────
 function handleShareTarget() {
@@ -3254,6 +3737,11 @@ if ('serviceWorker' in navigator) {
     await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden
   } catch (err) {
     console.error('[idbReady]', err); // z.B. blockiert durch einen anderen offenen Tab mit alter DB-Version
+  }
+  try {
+    await cleanupOldTombstones();
+  } catch (err) {
+    console.error('[cleanupOldTombstones]', err); // rein Aufräumarbeit, darf den Start nicht blockieren
   }
   await loadAll();
   // Capture BEFORE maybeSeedDemoData() runs - it fills State.all with 4 demo entries
