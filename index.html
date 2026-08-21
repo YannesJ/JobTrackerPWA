@@ -495,12 +495,11 @@
                 CSV / Excel
                 <input type="file" accept=".csv,.tsv,.xlsx,.xls" style="display:none" onchange="importCSV(event)" />
               </label>
-            </div>
-            <div data-status-anchor>
-              <button type="button" class="btn btn-ghost btn-xs import-info-btn" onclick="toggleImportInfo(event)" style="margin-top:0.625rem;color:var(--text-muted);font-weight:500">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                Welches Spaltenformat wird erwartet?
-              </button>
+              <div data-status-anchor>
+                <button type="button" class="btn btn-icon btn-sm import-info-btn" onclick="toggleImportInfo(event)" title="Welches Spaltenformat wird beim CSV/Excel-Import erwartet?" aria-label="Welches Spaltenformat wird beim CSV/Excel-Import erwartet?">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                </button>
+              </div>
             </div>
           </div>
 

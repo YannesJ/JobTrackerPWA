@@ -638,13 +638,6 @@ button.theme-toggle {
 }
 .btn-danger:hover { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.4); }
 
-/* Ausnahme vom .btn-Standard (white-space: nowrap): dieser eine Button trägt einen
-   ganzen Satz als Label statt eines kurzen Labels - ohne Umbruch drückt sein
-   unkürzbarer Inhalt auf schmalen Handy-Breiten die komplette Seite breiter als den
-   Viewport (#main hat als Flex-Kind sonst kein min-width:0 und schrumpft nicht unter
-   den Inhalt seines breitesten Nachfahren). */
-.import-info-btn { white-space: normal; text-align: left; }
-
 .btn-icon {
   padding: 0.5rem; background: transparent;
   color: var(--text-muted); border: none;
