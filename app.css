@@ -56,7 +56,9 @@
   --accent:       #e5fd5d;
   --accent-light: #eeff8f;
   --accent-dark:  #c8e02e;
-  --accent-text:  #6d7d12;
+  /* Textvariante des Akzents. Etwas dunkler als zuvor (#6d7d12), damit sie auch
+     als kleine Schrift auf dem hellgrauen Seitenhintergrund die 4.5:1 erreicht. */
+  --accent-text:  #637308;
   --text-on-accent: #151514;
   --accent-faint:  rgb(var(--accent-rgb) / .16);
   --accent-faint2: rgb(var(--accent-rgb) / .30);
@@ -94,7 +96,9 @@
   --border-focus:  var(--accent);
   --text-primary:   #0d0d14;
   --text-secondary: #5c5c7a;
-  --text-muted:     #9898b2;
+  /* 4.5:1 gegen den hellsten wie den dunkelsten Hintergrund dieses Themes.
+     Vorher #9898b2 - nur 2.5:1 und damit deutlich unter der Lesbarkeitsschwelle. */
+  --text-muted:     #6b6b85;
 }
 [data-theme="light"][data-skin="original"] #sidebar {
   --bg-nav:        #f9f9fc;
@@ -105,7 +109,7 @@
   --border-strong: rgba(0,0,0,.14);
   --text-primary:   #0d0d14;
   --text-secondary: #5c5c7a;
-  --text-muted:     #9898b2;
+  --text-muted:     #6b6b85;
   --accent-faint:  rgb(var(--accent-rgb) / .08);
   --accent-faint2: rgb(var(--accent-rgb) / .15);
   --accent-text:   var(--accent);
@@ -134,7 +138,8 @@
 
   --text-primary:   #151514;
   --text-secondary: #585858;
-  --text-muted:     #6f6f6a;
+  /* vorher #6f6f6a - 3.6:1 auf dem hellgrauen Seitenhintergrund */
+  --text-muted:     #5f5f5a;
 
   --status-open-bg:    #eff6ff;
   --status-open-fg:    #2563eb;
@@ -152,6 +157,9 @@
   --kanban-open-accent:  #3b82f6;
   --kanban-int-accent:   #f59e0b;
   --kanban-rej-accent:   #ef4444;
+  /* Rot als SCHRIFT. Die Flaechenvariante #ef4444 erreicht als Text auf hellem
+     Grund nur 2.6-3.8:1; im dunklen Theme braucht es umgekehrt einen hellen Ton. */
+  --danger-text:         #b52727;
   --kanban-acc-accent:   #22c55e;
 
   --grain-opacity: 0.025;
@@ -171,7 +179,8 @@
   --border-strong: rgba(255,255,255,.16);
   --text-primary:   #f4f4f0;
   --text-secondary: #b5b5b0;
-  --text-muted:     #6f6f6a;
+  /* vorher #6f6f6a - nur 3.0:1 auf den dunklen Kartenflaechen */
+  --text-muted:     #8d8d88;
   --accent-faint:  rgb(var(--accent-rgb) / .16);
   --accent-faint2: rgb(var(--accent-rgb) / .22);
   --accent-text:   var(--accent-light);
@@ -200,7 +209,8 @@
 
   --text-primary:   #f4f4f0;
   --text-secondary: #b5b5b0;
-  --text-muted:     #6f6f6a;
+  /* vorher #6f6f6a - nur 3.0:1 auf den dunklen Kartenflaechen */
+  --text-muted:     #8d8d88;
 
   --status-open-bg:    rgba(37, 99, 235, .14);
   --status-open-fg:    #93c5fd;
@@ -552,7 +562,11 @@ button.theme-toggle {
   color: var(--text-muted);
   cursor: pointer; transition: color var(--t-fast);
   font-size: 0.62rem; font-weight: 600;
-  letter-spacing: 0.03em; text-transform: uppercase;
+  /* Ohne Sperrung passt auch das laengste Label ("Einstellungen") in die Zelle -
+     vorher brauchte es 84px bei 80px Platz und wurde beschnitten. */
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-align: center; line-height: 1.15;
   border-radius: var(--r-md);
   position: relative;
   background: none; border: none;
@@ -633,7 +647,9 @@ button.theme-toggle {
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-strong); }
 
 .btn-danger {
-  background: transparent; color: #ef4444;
+  /* Textrot etwas dunkler als die Flaechenvariante #ef4444: als Schrift auf
+     hellem Grund erreichte die nur 2.7-3.8:1. */
+  background: transparent; color: var(--danger-text);
   border-color: rgba(239,68,68,.25);
 }
 .btn-danger:hover { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.4); }
@@ -777,7 +793,7 @@ button.theme-toggle {
   flex-shrink: 0;
 }
 .kpi-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
-.kpi-value { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; color: var(--text-primary); }
+.kpi-value { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; color: var(--text-primary); }
 .kpi-sub   { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem; }
 
 /* Gehalts-Sichtschutz: blendet alle als .jt-money markierten Werte aus, solange
@@ -1623,7 +1639,14 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   display: flex; flex-direction: column; gap: 2px;
 }
 .calendar-cell:hover { background: var(--bg-hover); border-color: var(--border-strong); }
-.calendar-cell.out-month { opacity: 0.4; }
+/* Tage aus dem Vor-/Folgemonat sollen zuruecktreten, aber lesbar bleiben.
+   Vorher wurde die ganze Zelle auf opacity 0.4 gesetzt - der Kontrast fiel damit
+   auf 1.9:1, die Zahlen waren praktisch nicht mehr zu entziffern. Eine hoehere
+   Opazitaet haette die Abstufung wieder aufgehoben. Stattdessen kennzeichnet jetzt
+   eine eigene Flaeche den Fremdmonat: die Zelle tritt klar zurueck, die Zahl bleibt
+   trotzdem lesbar. */
+.calendar-cell.out-month { background: var(--bg-subtle); }
+.calendar-cell.out-month .calendar-cell-num { color: var(--text-muted); font-weight: 500; }
 .calendar-cell.today { border-color: var(--accent); background: var(--accent-faint); }
 .calendar-cell-num { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
 .calendar-cell.today .calendar-cell-num { color: var(--accent-text); }
@@ -1742,10 +1765,11 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   border-radius: var(--r-md);
   padding: 0.5rem 0.75rem;
   font-size: 0.78rem; font-weight: 600;
-  color: #ef4444;
+  color: var(--danger-text);
   margin-bottom: 0.75rem;
 }
-[data-theme="dark"] .reminder-alert { color: #fca5a5; background: rgba(239,68,68,.12); }
+[data-theme="dark"] { --danger-text: #fca5a5; }
+[data-theme="dark"] .reminder-alert { background: rgba(239,68,68,.12); }
 
 /* Notes box */
 .notes-box {
@@ -1838,7 +1862,11 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   /* Stack view-switch + new button vertically if very tight */
   .page-header > div:last-child { gap: 6px; }
   .view-switch .view-btn { padding: 0.3rem 0.55rem; font-size: 0.72rem; }
-  .view-switch .view-btn span { display: none; } /* icon only on very small */
+  /* Frueher stand hier ".view-switch .view-btn span { display:none }". Die Regel traf
+     durch ihre hoehere Spezifitaet die .view-label-*-Spans - aber nur den
+     Tabelle-Knopf, weil "Kanban" seinen Text als nackten Textknoten fuehrt. Ergebnis
+     war ein beschrifteter Knopf neben einem unbeschrifteten Icon. Beide Bezeichnungen
+     sind kurz genug ("Liste", "Kanban"), also bleiben sie stehen. */
 }
 
 /* ── KPI cards: reduce font on tiny screens ──────────────────────────────── */
@@ -1972,7 +2000,7 @@ tbody tr:hover { background: var(--bg-hover); }
 .chart-card { background: var(--bg-elevated); border-color: var(--border); }
 
 /* Reminder alert */
-.reminder-alert { color: #ef4444; background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); }
+.reminder-alert { color: var(--danger-text); background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); }
 [data-theme="dark"] .reminder-alert { color: #fca5a5; background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.25); }
 
 /* Persist status */
@@ -2692,6 +2720,11 @@ body { -webkit-overflow-scrolling: auto; }
   line-height: 1.45;
 }
 
+/* Formularelemente erben die Schrift nicht von selbst - ohne diese Regel rendern
+   Knoepfe, Eingaben und Auswahlfelder in der Systemschrift (Arial) statt in Outfit.
+   Faellt erst auf, wenn man danach sucht, wirkt dann aber sofort inkonsistent. */
+button, input, select, textarea { font-family: inherit; }
+
 /* ── View-switch label: Tabelle on desktop, Liste on mobile ─────────────── */
 .view-label-mobile  { display: none; }
 .view-label-desktop { display: inline; }
@@ -3164,4 +3197,52 @@ body { -webkit-overflow-scrolling: auto; }
   font-weight: 700;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Tippziele auf Touch-Geraeten ────────────────────────────────────────────
+   Gemessen lagen viele Knoepfe bei 20-29px Hoehe. Auf dem Handy ist das knapp:
+   die gaengige Empfehlung liegt bei 44px, unter ~36px wird das Treffen muehsam.
+   Angehoben wird die Mindestflaeche, nicht die Schrift - das Layout bleibt damit
+   wie es ist, die Flaeche waechst nur nach innen. */
+@media (pointer: coarse), (max-width: 640px) {
+  .btn { min-height: 38px; }
+  .btn.btn-sm { min-height: 36px; }
+  .btn.btn-icon { min-width: 38px; min-height: 38px; }
+  .view-btn { min-height: 34px; }
+  .list-sort-btn { min-height: 36px; }
+  .goal-edit-btn { min-width: 30px; min-height: 30px; }
+  .jobportal-check { width: 20px; height: 20px; }
+  /* Die ganze Zeile als Ziel, nicht nur das Kaestchen */
+  .jobportal-item { min-height: 40px; }
+  .columns-popover-item { min-height: 38px; }
+  .sort-popover-item { min-height: 38px; }
+  .status-color-input { min-width: 34px; min-height: 34px; }
+}
+
+/* Der Bereich mit dem Verlaufsdiagramm scrollt seitlich. Damit er auch per
+   Tastatur erreichbar ist, bekommt er einen Fokus - sonst kommt man mit Tab nicht
+   an den Inhalt rechts. */
+.sankey-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* Nur fuer Screenreader: sichtbar leere Zellen brauchen trotzdem eine Bezeichnung */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Nachtrag zu den Tippzielen: diese Elemente setzen ihre Groesse explizit und
+   werden deshalb von den allgemeinen .btn-Regeln oben nicht erfasst. Vergroessert
+   wird jeweils nur die Trefferflaeche, das Icon darin bleibt gleich gross. */
+@media (pointer: coarse), (max-width: 640px) {
+  .app-card-status-btn,
+  .app-card-menu-btn { width: 36px; height: 36px; }
+  .kc-status-btn     { width: 32px; height: 32px; }
+  .star-btn          { min-width: 34px; min-height: 34px; }
+  .kanban-sort-btn   { min-height: 32px; padding: 4px 8px; }
+  .jobportal-item input[type="checkbox"] { width: 20px; height: 20px; }
 }

@@ -409,11 +409,47 @@ function _hslToRgb(h, s, l) {
   return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
 }
 function _clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+// Relative Helligkeit nach WCAG - Grundlage jeder Kontrastrechnung.
+function _relLuminance({ r, g, b }) {
+  const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+function _contrast(a, b) {
+  const la = _relLuminance(a), lb = _relLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function _blend(fg, bg, alpha) {
+  return { r: Math.round(fg.r * alpha + bg.r * (1 - alpha)),
+           g: Math.round(fg.g * alpha + bg.g * (1 - alpha)),
+           b: Math.round(fg.b * alpha + bg.b * (1 - alpha)) };
+}
+// Sucht die erste Helligkeitsstufe, die gegen den gegebenen Hintergrund lesbar ist.
+// Eine feste HSL-Klammer reicht dafür nicht: wie dunkel eine Farbe wirken muss,
+// hängt vom Farbton ab - gesättigtes Orange und Grün bleiben bei derselben
+// Helligkeit deutlich heller als Blau oder Rot. Da die Statusfarben frei wählbar
+// sind, wird der Kontrast deshalb ausgerechnet statt geschätzt.
+function _readableFg(hsl, bg, { dark = false, minRatio = 4.5 } = {}) {
+  const sat = Math.max(hsl.s, dark ? 40 : 50);
+  const start = dark ? 62 : 42;
+  const ende  = dark ? 96 : 8;
+  const schritt = dark ? 2 : -2;
+  let letzte = _hslToRgb(hsl.h, sat, start);
+  for (let l = start; dark ? l <= ende : l >= ende; l += schritt) {
+    letzte = _hslToRgb(hsl.h, sat, l);
+    if (_contrast(letzte, bg) >= minRatio) return letzte;
+  }
+  return letzte; // nichts erreicht den Wert - dann die äußerste Stufe nehmen
+}
+
 function statusColorVars(hex) {
   const rgb = _hexToRgb(hex);
   const hsl = _rgbToHsl(rgb);
-  const fgL = _hslToRgb(hsl.h, Math.max(hsl.s, 50), _clamp(hsl.l, 24, 42));
-  const fgD = _hslToRgb(hsl.h, Math.max(hsl.s, 40), _clamp(hsl.l, 62, 80));
+  // Der Badge-Hintergrund ist die Statusfarbe mit 10 % (hell) bzw. 16 % (dunkel)
+  // über der Kartenfläche - gegen genau diese Mischung muss der Text bestehen.
+  const bgHell   = _blend(rgb, { r: 255, g: 255, b: 255 }, 0.10);
+  const bgDunkel = _blend(rgb, { r: 31, g: 31, b: 29 },   0.16);
+  const fgL = _readableFg(hsl, bgHell);
+  const fgD = _readableFg(hsl, bgDunkel, { dark: true });
   const rgba = ({ r, g, b }, a) => `rgba(${r},${g},${b},${a})`;
   return {
     bg: rgba(rgb, .10),  fg: rgba(fgL, 1), bdr: rgba(rgb, .32),
@@ -927,10 +963,12 @@ async function deleteApp(id) {
 const TOMBSTONE_RETENTION_DAYS = 90;
 async function cleanupOldTombstones() {
   const cutoff = Date.now() - TOMBSTONE_RETENTION_DAYS * 86400000;
-  const pairs = await idbEntries(DB);
-  for (const [id, app] of pairs) {
-    if (app.deletedAt && new Date(app.deletedAt).getTime() < cutoff) {
-      await idbDel(id, DB);
+  for (const store of [DB, EVENTS]) {
+    const pairs = await idbEntries(store);
+    for (const [id, rec] of pairs) {
+      if (rec?.deletedAt && new Date(rec.deletedAt).getTime() < cutoff) {
+        await idbDel(id, store);
+      }
     }
   }
 }
@@ -1024,7 +1062,9 @@ async function maybeSeedDemoData() {
 // ─── Kalender-Termine ───────────────────────────────────────────────────────────
 async function loadEvents() {
   const pairs = await idbEntries(EVENTS);
-  State.events = pairs.map(([, v]) => v)
+  // Soft-gelöschte Termine bleiben im Store, damit ihre Löschung beim Geräte-Sync
+  // die Gegenseite erreicht (gleiche Mechanik wie bei Bewerbungen, siehe deleteApp).
+  State.events = pairs.map(([, v]) => v).filter(e => !e.deletedAt)
     .sort((a, b) => `${a.date} ${a.time || '99:99'}`.localeCompare(`${b.date} ${b.time || '99:99'}`));
 }
 async function saveEvent(ev) {
@@ -1033,7 +1073,14 @@ async function saveEvent(ev) {
   await loadEvents();
 }
 async function deleteEventById(id) {
-  await idbDel(id, EVENTS);
+  // Tombstone statt hartem Löschen - sonst holt der nächste Geräte-Sync den Termin
+  // von der Gegenseite wieder zurück.
+  const ev = await idbGet(id, EVENTS);
+  if (ev) {
+    ev.deletedAt = nowISO();
+    ev.updatedAt = ev.deletedAt;
+    await idbSet(id, ev, EVENTS);
+  }
   await loadEvents();
 }
 
@@ -1935,6 +1982,56 @@ function checkBackupReminder() {
   if (dotEl) dotEl.className = `persist-dot ${overdue ? 'warn' : 'ok'}`;
 }
 
+// Einstellungen, die an der Erlaubnis bzw. den Fähigkeiten des EINZELNEN Geräts
+// hängen. Sie gehören in ein Backup (Wiederherstellung derselben Installation),
+// aber nicht in einen Geräte-Sync: ob auf dem Handy Benachrichtigungen erlaubt
+// sind, sagt nichts darüber, ob sie es auf dem Laptop sind.
+const DEVICE_LOCAL_SETTINGS = ['pushEnabled', 'badgeEnabled'];
+
+/** Ansichts-Vorlieben. Nur fürs Backup: Handy und Desktop dürfen bewusst
+ *  unterschiedliche Spalten und Karteninfos zeigen. */
+function collectViewPreferences() {
+  return {
+    tableColumns:       State.tableColumns,
+    kanbanCardFields:   State.kanbanCardFields,
+    kanbanHiddenCols:   [...State.kanbanHiddenCols],
+    statusFilterHidden: [...State.statusFilterHidden],
+  };
+}
+
+/** Übernimmt eingehende Einstellungen. `skipDeviceLocal` beim Geräte-Sync, damit
+ *  eine dort erteilte Benachrichtigungs-Erlaubnis nicht hierher behauptet wird. */
+function applyIncomingSettings(settings, { skipDeviceLocal = false } = {}) {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return;
+  const eingehend = { ...settings };
+  if (skipDeviceLocal) for (const k of DEVICE_LOCAL_SETTINGS) delete eingehend[k];
+  State.settings = { ...State.settings, ...eingehend };
+  saveSettings();
+  if (document.getElementById('page-settings')?.classList.contains('active')) renderSettingsNotifications();
+  updateBadge();
+}
+
+/** Gegenstück zu collectViewPreferences(); nur aus einem Backup heraus aufgerufen. */
+function applyViewPreferences(prefs) {
+  if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return;
+  if (prefs.tableColumns && typeof prefs.tableColumns === 'object') {
+    State.tableColumns = { ...DEFAULT_TABLE_COLUMNS, ...prefs.tableColumns };
+    saveTableColumns(); applyTableColumnVisibility();
+  }
+  if (prefs.kanbanCardFields && typeof prefs.kanbanCardFields === 'object') {
+    State.kanbanCardFields = { ...DEFAULT_KANBAN_CARD_FIELDS, ...prefs.kanbanCardFields };
+    saveKanbanCardFields();
+  }
+  if (Array.isArray(prefs.kanbanHiddenCols)) {
+    State.kanbanHiddenCols = new Set(prefs.kanbanHiddenCols.filter(x => typeof x === 'string'));
+    saveKanbanHiddenCols();
+  }
+  if (Array.isArray(prefs.statusFilterHidden)) {
+    State.statusFilterHidden = new Set(prefs.statusFilterHidden.filter(x => typeof x === 'string'));
+    saveStatusFilterHidden(); updateStatusFilterLabel();
+  }
+}
+
 // Ein Backup muss alles enthalten, was die App als Nutzerdaten führt - die Oberfläche
 // verspricht "Speichert alle Daten". Bis hierher fehlten Kalendertermine und
 // Erinnerungen komplett: wer exportierte, den Browserspeicher leerte und zurückspielte,
@@ -1951,8 +2048,13 @@ async function buildBackupPayload(applications) {
     applications,
     statuses:      State.statuses,
     kanbanSort:    State.kanbanSort,
-    events:        eventPairs.map(([, v]) => v),
+    events:        eventPairs.map(([, v]) => v).filter(e => !e?.deletedAt),
     reminders:     reminderPairs.map(([, v]) => v),
+    // Benachrichtigungs-Einstellungen und Wochenziel: ohne sie stünde nach einer
+    // Wiederherstellung alles wieder auf Standard - inklusive der je Status
+    // eingestellten Schwellen, die zum mitgesicherten Statuskatalog gehören.
+    settings:      State.settings,
+    preferences:   collectViewPreferences(),
   };
 }
 
@@ -2379,6 +2481,23 @@ function toggleDetailMoreMenu(e, id) {
 // Geräte-Sync), BEVOR irgendetwas geschrieben wird. Vorher ging ein Eintrag ohne id
 // mitten im Import auf die Nase - und zwar nachdem die Datenbank bereits geleert war,
 // also mit Totalverlust als Ergebnis.
+// Termine aus fremder Quelle prüfen, bevor sie geschrieben werden - dieselbe
+// Vorsichtsmaßnahme wie normalizeImportedApps() bei Bewerbungen. Tombstones (nur
+// id + deletedAt, ohne Titel) müssen dabei durchkommen, sonst pflanzt sich eine
+// Löschung nicht fort.
+function sanitizeImportedEvents(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : null;
+    if (!id) continue;
+    if (!raw.deletedAt && !(raw.date && raw.title)) continue;
+    out.push({ ...raw, id });
+  }
+  return out;
+}
+
 function normalizeImportedApps(list) {
   if (!Array.isArray(list)) return [];
   const seenIds = new Set();
@@ -2411,12 +2530,7 @@ async function applyImportedData({ apps, events, reminders }) {
   for (const app of apps) await idbSet(app.id, app, DB);
   if (Array.isArray(events)) {
     await idbClear(EVENTS);
-    for (const ev of events) {
-      if (ev && typeof ev === 'object' && ev.date && ev.title) {
-        const id = typeof ev.id === 'string' && ev.id ? ev.id : uuid();
-        await idbSet(id, { ...ev, id }, EVENTS);
-      }
-    }
+    for (const ev of sanitizeImportedEvents(events)) await idbSet(ev.id, ev, EVENTS);
   }
   if (Array.isArray(reminders)) {
     await idbClear(REMINDERS);
@@ -2504,7 +2618,11 @@ async function importData(e) {
     });
     // Anders als bei CSV bleiben die Bewerbungs-IDs beim JSON-Import erhalten, die
     // gespeicherten Kanban-Reihenfolgen passen also direkt.
-    if (!isArray) applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
+    if (!isArray) {
+      applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
+      applyIncomingSettings(parsed.settings);
+      applyViewPreferences(parsed.preferences);
+    }
     await loadAll();
     await loadEvents();
     if (document.getElementById('page-calendar')?.classList.contains('active')) renderCalendar();
@@ -2938,9 +3056,11 @@ function renderStatusSettings() {
           <div class="status-manage-row">
             <span class="status-position" title="Position ${i + 1} von ${State.statuses.length} - bestimmt die Reihenfolge der Kanban-Spalten">${i + 1}.</span>
             <input type="color" class="status-color-input" value="${escAttr(s.color)}"
-              oninput="updateStatusColor(${i}, this.value)" title="Farbe" />
+              oninput="updateStatusColor(${i}, this.value)"
+              title="Farbe" aria-label="Farbe der Kategorie ${escAttr(s.name)}" />
             <input type="text" class="form-input status-name-input" value="${escAttr(s.name)}"
-              onchange="renameStatus(${i}, this.value)" placeholder="Name" />
+              onchange="renameStatus(${i}, this.value)" placeholder="Name"
+              aria-label="Name der Kategorie ${escAttr(s.name)}" />
             <div class="status-move-btns">
               <button type="button" class="btn btn-icon btn-sm" onclick="moveStatus(${i},-1)" title="Nach oben" ${i === 0 ? 'disabled' : ''}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
@@ -2969,7 +3089,7 @@ function renderStatusSettings() {
     </div>
     <form class="status-add-row" onsubmit="return addStatus(event)">
       <span class="status-position status-position--new" title="Neue Kategorie wird ans Ende gestellt">${State.statuses.length + 1}.</span>
-      <input type="color" id="new-status-color" class="status-color-input" value="#c8e02e" title="Farbe" />
+      <input type="color" id="new-status-color" class="status-color-input" value="#c8e02e" title="Farbe" aria-label="Farbe der neuen Kategorie" />
       <input type="text" id="new-status-name" class="form-input status-name-input" placeholder="Neue Kategorie …" required />
       <button type="submit" class="btn btn-ghost btn-sm">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -3373,7 +3493,11 @@ async function _gdDownloadAndImport(fileId) {
     events:    isArray ? undefined : parsed.events,
     reminders: isArray ? undefined : parsed.reminders,
   });
-  if (!isArray) applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
+  if (!isArray) {
+    applyIncomingCatalog(parsed.statuses, parsed.kanbanSort);
+    applyIncomingSettings(parsed.settings);
+    applyViewPreferences(parsed.preferences);
+  }
   await loadAll();
   await loadEvents();
 }
@@ -3660,8 +3784,8 @@ function _qrSummarizeMerge(beforeApps, mergedApps) {
 // könnte sonst gar nicht mehr syncen. Zusätzliche optionale Felder sind dagegen
 // abwärtskompatibel: ein alter Empfänger liest weiter nur `apps` und ignoriert den
 // Rest. Die Version wird erst bei einer echten Breaking Change hochgezählt.
-function _qrBuildSyncPayload(apps, statuses, kanbanSort) {
-  return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort };
+function _qrBuildSyncPayload(apps, statuses, kanbanSort, events, reminders, settings) {
+  return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort, events, reminders, settings };
 }
 
 /** Gegenstück zu _qrBuildSyncPayload(); wirft bei fremdem/kaputtem Inhalt.
@@ -3674,6 +3798,10 @@ function _qrReadSyncPayload(parsed) {
   return {
     apps:       parsed.apps,
     statuses:   Array.isArray(parsed.statuses) ? parsed.statuses : [],
+    events:     Array.isArray(parsed.events)    ? parsed.events    : [],
+    reminders:  Array.isArray(parsed.reminders) ? parsed.reminders : [],
+    settings:   (parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings))
+      ? parsed.settings : null,
     kanbanSort: (parsed.kanbanSort && typeof parsed.kanbanSort === 'object' && !Array.isArray(parsed.kanbanSort))
       ? parsed.kanbanSort : {},
   };
@@ -3708,11 +3836,18 @@ async function openQRSendModal() {
     toast(err.message, 'error');
     return;
   }
-  const pairs = await idbEntries(DB); // inkl. Tombstones, damit Löschungen mit übertragen werden
-  const apps  = pairs.map(([, v]) => v);
-  if (!apps.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
+  // Beide Stores inkl. Tombstones, damit Löschungen mit übertragen werden
+  const [appPairs, eventPairs, reminderPairs] = await Promise.all([
+    idbEntries(DB),
+    idbEntries(EVENTS).catch(() => []),
+    idbEntries(REMINDERS).catch(() => []),
+  ]);
+  const apps      = appPairs.map(([, v]) => v);
+  const events    = eventPairs.map(([, v]) => v);
+  const reminders = reminderPairs.map(([, v]) => v);
+  if (!apps.length && !events.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
 
-  const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort));
+  const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort, events, reminders, State.settings));
   const raw   = new TextEncoder().encode(json);
   const { bytes, gzipped } = await _gzipBytes(raw);
   const sessionId = Math.floor(Math.random() * 65536);
@@ -3726,7 +3861,10 @@ async function openQRSendModal() {
   // "Fertig"-Button ist mitgewandert.
   const typeNumber = _qrTypeNumberFor(chunks);
   _qrSend = { chunks, typeNumber, frameIndex: 0, startedAt: Date.now(), timer: null };
-  document.getElementById('qr-send-count').textContent = `${apps.length} Einträge - ${chunks.length} Code${chunks.length === 1 ? '' : 's'}`;
+  const teile = [`${apps.length} Bewerbung${apps.length === 1 ? '' : 'en'}`];
+  if (events.length) teile.push(`${events.length} Termin${events.length === 1 ? '' : 'e'}`);
+  document.getElementById('qr-send-count').textContent =
+    `${teile.join(', ')} - ${chunks.length} Code${chunks.length === 1 ? '' : 's'}`;
   showModal('qr-send-modal');
   _qrRenderSendFrame();
   _qrSend.timer = setInterval(_qrRenderSendFrame, QR_SYNC_FRAME_INTERVAL_MS);
@@ -3865,10 +4003,18 @@ async function _qrFinishScan(total) {
   try { parsed = JSON.parse(text); } catch { throw new Error('Kein gültiger Sync-Code'); }
   const incoming = _qrReadSyncPayload(parsed);
 
-  const localPairs = await idbEntries(DB);
-  const localApps  = localPairs.map(([, v]) => v);
+  const [localPairs, localEventPairs] = await Promise.all([
+    idbEntries(DB),
+    idbEntries(EVENTS).catch(() => []),
+  ]);
+  const localApps   = localPairs.map(([, v]) => v);
+  const localEvents = localEventPairs.map(([, v]) => v);
   const merged  = mergeApps(localApps, normalizeImportedApps(incoming.apps), _qrScan.conflictRule);
   const summary = _qrSummarizeMerge(localApps, merged);
+  // mergeApps() führt nach id zusammen und wertet updatedAt/deletedAt aus - für
+  // Termine gilt dieselbe Regel, die Funktion ist nicht auf Bewerbungen beschränkt.
+  const mergedEvents = mergeApps(localEvents, sanitizeImportedEvents(incoming.events), _qrScan.conflictRule);
+  const eventSummary = _qrSummarizeMerge(localEvents, mergedEvents);
   // Statuskatalog wird erst beim Übernehmen geschrieben (_qrCommitScan), nicht hier -
   // die Vorschau darf lokal noch nichts verändern.
   const catalogAdds = mergeStatusCatalog(State.statuses, incoming.statuses)
@@ -3878,12 +4024,12 @@ async function _qrFinishScan(total) {
   // bestätigen lassen (_qrCommitScan()), bevor sich lokal überhaupt etwas ändert. Ein
   // korrekt gescannter/entschlüsselter Code allein reicht nicht als Freigabe.
   _qrStopCamera();
-  _qrScan.pending = { merged, summary, beforeApps: localApps, incoming, catalogAdds };
+  _qrScan.pending = { merged, summary, beforeApps: localApps, incoming, catalogAdds, mergedEvents, eventSummary };
   document.getElementById('qr-scan-live').classList.add('hidden');
   document.getElementById('qr-scan-result').classList.remove('hidden');
   document.getElementById('qr-scan-cancel-btn').textContent = 'Verwerfen';
   document.getElementById('qr-scan-commit-btn').classList.remove('hidden');
-  _qrRenderResultSummary(summary, 'Bereit zum Übernehmen:', catalogAdds);
+  _qrRenderResultSummary(summary, 'Bereit zum Übernehmen:', catalogAdds, eventSummary);
 }
 
 /** Einzige Stelle, die beim Geräte-Sync tatsächlich idbSet() aufruft - erst nach
@@ -3891,12 +4037,25 @@ async function _qrFinishScan(total) {
 async function _qrCommitScan() {
   const pending = _qrScan?.pending;
   if (!pending) return;
-  const { merged, summary, beforeApps, incoming } = pending;
+  const { merged, summary, beforeApps, incoming, mergedEvents } = pending;
   for (const app of merged) await idbSet(app.id, app, DB);
+  for (const ev of mergedEvents || []) await idbSet(ev.id, ev, EVENTS);
+  // Erinnerungen tragen kein updatedAt und hängen 1:1 an einer Bewerbung. Statt zu
+  // mergen werden nur fehlende ergänzt - eine lokal bereits gesetzte Erinnerung
+  // soll ein Sync nicht überschreiben.
+  for (const r of incoming?.reminders || []) {
+    if (!r || typeof r !== 'object' || !r.appId || !r.date) continue;
+    const id = typeof r.id === 'string' && r.id ? r.id : `reminder-${r.appId}`;
+    if (!(await idbGet(id, REMINDERS))) await idbSet(id, { ...r, id }, REMINDERS);
+  }
+  await loadEvents();
   // Statuskategorien und Kanban-Reihenfolge des sendenden Geräts übernehmen, damit
   // beide Geräte danach wirklich gleich aussehen. Zusammenführen statt ersetzen:
   // eigene Kategorien des Zielgeräts bleiben erhalten.
   applyIncomingCatalog(incoming?.statuses, incoming?.kanbanSort);
+  // Benachrichtigungs-Einstellungen mit, aber ohne die geräteeigenen
+  // Erlaubnis-Schalter (siehe DEVICE_LOCAL_SETTINGS).
+  applyIncomingSettings(incoming?.settings, { skipDeviceLocal: true });
   await loadAll();
 
   document.getElementById('qr-scan-commit-btn').classList.add('hidden');
@@ -3933,7 +4092,7 @@ async function _qrUndoSync(beforeMap, summary) {
 }
 
 /** Rendert die Zusammenfassung (mit optionalem Vorschau-Präfix) + aufklappbare Details. */
-function _qrRenderResultSummary(summary, prefix, catalogAdds = []) {
+function _qrRenderResultSummary(summary, prefix, catalogAdds = [], eventSummary = null) {
   const parts = [];
   if (summary.added.length)   parts.push(`${summary.added.length} neu`);
   if (summary.updated.length) parts.push(`${summary.updated.length} aktualisiert`);
@@ -3941,6 +4100,9 @@ function _qrRenderResultSummary(summary, prefix, catalogAdds = []) {
   // Der Statuskatalog wird beim Übernehmen mit angepasst - das gehört sichtbar in die
   // Vorschau, sonst ändern sich hinterher unerwartet Farben und Spalten.
   if (catalogAdds.length) parts.push(`${catalogAdds.length} neue Statuskategorie${catalogAdds.length === 1 ? '' : 'n'}`);
+  const evTouched = eventSummary
+    ? eventSummary.added.length + eventSummary.updated.length + eventSummary.deleted.length : 0;
+  if (evTouched) parts.push(`${evTouched} Termin${evTouched === 1 ? '' : 'e'}`);
   const text = parts.length ? parts.join(' · ') : 'Keine Änderungen - beide Geräte waren bereits auf demselben Stand';
   document.getElementById('qr-scan-result-summary').textContent = prefix ? `${prefix} ${text}` : text;
 

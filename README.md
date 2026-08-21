@@ -1,49 +1,37 @@
 # JobTracker
 
-Bewerbungen im Blick behalten, statt sie in E-Mails und Tabellen zu verlieren.
+**Bewerbungen im Blick behalten, statt sie in E-Mails und Tabellen zu verlieren.**
 
-JobTracker ist ein kostenloser Bewerbungstracker für den Browser: Firma, Position, Status, Gehalt, Termine und Notizen an einem Ort - als übersichtliche Liste oder als Kanban-Board. Dazu ein Dashboard mit Erfolgsquote und Gehaltsüberblick, ein Kalender für Vorstellungsgespräche und Fristen, und eine Suche, die den Job gleichzeitig auf den größten deutschen Jobportalen sucht.
+JobTracker ist ein kostenloser Bewerbungstracker für den Browser. Firma, Position, Status, Gehalt, Termine und Notizen an einem Ort - als übersichtliche Liste oder als Kanban-Board.
 
-**Deine Daten bleiben deine Daten.** Kein Konto, keine Cloud, kein Tracking - alles läuft direkt in deinem Browser auf deinem Gerät. Wer mehrere Geräte nutzt, gleicht sie per QR-Code direkt zwischen den Geräten ab, über Export/Import, oder optional über den eigenen Google-Drive-Sync.
+Kein Konto. Keine Cloud. Kein Tracking. Alles läuft direkt in deinem Browser, auf deinem Gerät.
 
-## Funktionen
+## Warum JobTracker
 
-### Erfassen und ordnen
-- Bewerbungen mit Status, Gehalt, Terminen, Ansprechpartner und Notizen
-- Tabelle oder Kanban-Board, Spalten und Karteninhalte frei ein- und ausblendbar
-- Eigene Status-Kategorien mit Farben und frei wählbarer Reihenfolge
-- Eigene Kartenreihenfolge per Drag & Drop, je Statusspalte
-- Prioritäts-Sterne: wie sehr willst du den Job?
-- Volltextsuche und Filter nach Status und Quelle
+**Deine Daten bleiben deine Daten.** Bewerbungen sind heikel: Gehaltsvorstellungen, Absagen, Namen von Ansprechpartnern. Nichts davon verlässt dein Gerät - es gibt keinen Server, an den es gehen könnte.
 
-### Auswerten
-- Dashboard mit Erfolgsquote, Gehaltsstatistik, Absagegründen und Wochenziel
-- Verlaufsdiagramm (Sankey): zeigt, welchen Weg deine Bewerbungen durch die Status genommen haben - zum Kopieren, Teilen und Speichern
-- Kalender mit Erinnerungen und Nachfass-Hinweisen
-- Optionale Benachrichtigungen bei Statuswechseln und längerer Funkstille
+**Du siehst, wo du stehst.** Ein Dashboard mit Erfolgsquote, Gehaltsüberblick und Wochenziel. Dazu ein Verlaufsdiagramm, das zeigt, welchen Weg deine Bewerbungen genommen haben - wie viele im Gespräch landeten, wo es endete, und wie viele noch offen sind.
 
-### Finden
-- Jobsuche über mehrere Portale gleichzeitig (LinkedIn, Indeed, StepStone, Bundesagentur, XING u.a.)
-- Direktlinks zur Arbeitgeber- und Gehaltsrecherche aus jeder Bewerbung heraus
+**Nichts geht unter.** Kalender für Vorstellungsgespräche und Fristen, Erinnerungen zum Nachfassen und ein Hinweis, wenn eine Bewerbung zu lange still ist.
 
-### Daten behalten
-- Backup als JSON - enthält Bewerbungen, Status-Kategorien, Kanban-Reihenfolge, Kalendertermine und Erinnerungen
-- Export und Import als CSV/Excel
-- Geräteabgleich per animiertem QR-Code: kein Server, kein Konto, niemand dazwischen. Vor dem Übernehmen zeigt eine Vorschau genau, was sich ändert
-- Optionaler Google-Drive-Sync mit deinen eigenen Zugangsdaten
-- Gehaltsangaben auf Knopfdruck ausblenden, bevor du die Liste jemandem zeigst
-- Als App installierbar, funktioniert offline
+**Ein Suchfeld, viele Portale.** LinkedIn, Indeed, StepStone, Bundesagentur, XING und weitere - gleichzeitig durchsuchen, statt sich durch jedes einzeln zu klicken.
+
+**Mehrere Geräte, ohne Umweg.** Handy und Laptop gleichst du per QR-Code direkt miteinander ab. Kein Server, kein Konto, niemand dazwischen. Alternativ per Backup-Datei oder über deinen eigenen Google-Drive-Zugang.
+
+**Gehalt verbergen.** Ein Klick blendet alle Gehaltsangaben aus, bevor du jemandem deine Liste zeigst.
+
+**Läuft überall.** Als App installierbar, auf dem Handy wie am Rechner, und auch ohne Internetverbindung.
 
 ## Loslegen
 
-Einfach die Seite öffnen - keine Installation, kein Account nötig. Wer mag, installiert sie zusätzlich als App fürs Handy oder den Desktop.
+Seite öffnen, fertig. Keine Installation, kein Account. Wer mag, installiert sie zusätzlich als App.
 
 ## Technisch
 
-Statische Seite ohne Build-Schritt: HTML, CSS und Vanilla JavaScript, ausgeliefert über GitHub Pages. Die Daten liegen in IndexedDB, Einstellungen in `localStorage`. Alle Fremdbibliotheken und Schriften sind unter `vendor/` mitgeliefert, damit im Normalbetrieb keine einzige Anfrage nach außen geht.
+Statische Seite ohne Build-Schritt: HTML, CSS und Vanilla JavaScript, ausgeliefert über GitHub Pages. Daten liegen in IndexedDB, Einstellungen in `localStorage`. Alle Fremdbibliotheken und Schriften sind unter `vendor/` mitgeliefert, damit im Normalbetrieb keine Anfrage nach außen geht.
 
 ```
 node tests/run.js     # Testsuite, ohne npm install
 ```
 
-Eine Übersicht der mitgelieferten Fremdkomponenten und ihrer Lizenzen steht in [THIRD-PARTY.md](THIRD-PARTY.md).
+Mitgelieferte Fremdkomponenten und ihre Lizenzen: [THIRD-PARTY.md](THIRD-PARTY.md)
