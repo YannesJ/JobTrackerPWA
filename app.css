@@ -312,6 +312,10 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
 
 #main {
   flex: 1;
+  min-width: 0; /* flex items default to min-width:auto - without this, one unbreakable-
+                   text descendant anywhere on any page can force the whole app wider
+                   than the viewport on narrow phones instead of just wrapping/scrolling
+                   internally */
   margin-left: 220px;
   min-height: 100vh;
   display: flex;
@@ -633,6 +637,13 @@ button.theme-toggle {
   border-color: rgba(239,68,68,.25);
 }
 .btn-danger:hover { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.4); }
+
+/* Ausnahme vom .btn-Standard (white-space: nowrap): dieser eine Button trägt einen
+   ganzen Satz als Label statt eines kurzen Labels - ohne Umbruch drückt sein
+   unkürzbarer Inhalt auf schmalen Handy-Breiten die komplette Seite breiter als den
+   Viewport (#main hat als Flex-Kind sonst kein min-width:0 und schrumpft nicht unter
+   den Inhalt seines breitesten Nachfahren). */
+.import-info-btn { white-space: normal; text-align: left; }
 
 .btn-icon {
   padding: 0.5rem; background: transparent;

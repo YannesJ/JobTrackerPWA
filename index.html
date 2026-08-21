@@ -616,7 +616,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="21"/><line x1="21" y1="14" x2="21" y2="21"/><line x1="17.5" y1="14" x2="17.5" y2="17.5"/><line x1="14" y1="17.5" x2="21" y2="17.5"/></svg>
                 An anderes Gerät senden
               </h3>
-              <p>Zeigt einen Code auf diesem Gerät, den du mit dem anderen Gerät scannst. Überträgt deine Änderungen, ohne dort etwas zu löschen.</p>
+              <p>Zeigt einen Code, den du mit dem anderen Gerät scannst. Ob dabei etwas überschrieben wird, entscheidet die Auswahl auf dem scannenden Gerät (siehe unten).</p>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="openQRSendModal()">Anzeigen</button>
           </div>
@@ -627,7 +627,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                 Von anderem Gerät empfangen
               </h3>
-              <p>Scannt den Code des anderen Geräts (dort vorher "Anzeigen" antippen). Bei Widersprüchen gewinnt die Version vom anderen Gerät.</p>
+              <p>Scannt den Code des anderen Geräts (dort zuerst "Anzeigen" antippen). Ist ein Eintrag auf beiden Geräten unterschiedlich, überschreibt der Stand vom anderen Gerät deinen eigenen. Du bestätigst vorher in einer Übersicht, was sich ändert.</p>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="openQRScanModal('preferIncoming')">Scannen</button>
           </div>
@@ -638,7 +638,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 Beide Geräte abgleichen
               </h3>
-              <p>Scannt den Code des anderen Geräts (dort vorher "Anzeigen" antippen) und führt Änderungen von beiden Seiten zusammen - für den Fall, dass auf beiden etwas geändert wurde.</p>
+              <p>Scannt den Code des anderen Geräts (dort zuerst "Anzeigen" antippen) und vereint Änderungen von beiden Seiten. Bei ein und demselben Eintrag bleibt die neuere Änderung erhalten, die ältere geht verloren. Du bestätigst auch hier vorher in einer Übersicht, was sich ändert.</p>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="openQRScanModal('newest')">Scannen</button>
           </div>
@@ -1037,7 +1037,7 @@
     </div>
     <div class="modal-body" style="padding-top:.5rem;text-align:center">
       <p style="font-size:.72rem;color:var(--text-muted);margin-bottom:.875rem">
-        Jeder, der diesen Code scannt und die App installiert hat, kann die Daten empfangen - wie bei jedem Pairing-Code nicht in der Öffentlichkeit zeigen.
+        Jeder, der diesen Code scannt und die App installiert hat, kann die Daten empfangen - zeig ihn deshalb nicht in der Öffentlichkeit.
       </p>
       <div class="qr-glow">
         <canvas id="qr-send-canvas"></canvas>
