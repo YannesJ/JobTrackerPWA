@@ -201,6 +201,7 @@ function loadAppContext() {
         nextEventForApp, localDateStr,
         STATUS_KINDS, sanitizeStatuses, sanitizeKanbanSort, mergeStatusCatalog,
         statusSlot, getStatusColor, getStatusKind, sortAppsForKanban,
+        _kanbanDropPosition, _applyKanbanDrop,
         parseDelimitedText, buildCsvRows, spreadsheetRowsToApplications,
         normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
@@ -709,6 +710,34 @@ if (ctx) {
     const apps = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
     const sorted = Array.from(ctx.sortAppsForKanban(apps, 'Offen')).map(a => a.id);
     assert.deepStrictEqual(sorted, ['c', 'a', 'b']);
+  });
+}
+
+// ─── Kanban: Drop-Position und Leerlauf-Drops ──────────────────────────────────
+if (ctx) {
+  test('_kanbanDropPosition trifft bei aktivem Filter die richtige Stelle', () => {
+    // Sichtbar sind nur a und d - die Drop-Anzeige zählt daher Index 1 ("vor d"),
+    // in der vollständigen Spaltenreihenfolge ist das aber Position 3.
+    const order = ['a', 'b', 'c', 'd'];
+    assert.strictEqual(ctx._kanbanDropPosition(order, 1, { before: 'd', after: 'a' }), 3);
+    assert.strictEqual(ctx._kanbanDropPosition(order, 1, { before: null, after: 'd' }), 4,
+      'ohne Karte darunter zählt die Karte darüber');
+    assert.strictEqual(ctx._kanbanDropPosition(order, 2, { before: null, after: null }), 2,
+      'ohne Nachbarn bleibt der gezählte Index');
+    assert.strictEqual(ctx._kanbanDropPosition(order, null, null), 4, 'ohne Angabe ans Ende');
+  });
+
+  asyncTest('_applyKanbanDrop lässt eine Spalte in Ruhe, wenn die Karte dort liegen bleibt', async () => {
+    // Der versehentliche Langdruck auf dem Handy: Karte wird an ihrer eigenen Position
+    // wieder abgelegt. Die Spalte darf dadurch NICHT auf "Eigene Reihenfolge" springen.
+    ctx.State.kanbanSort = {};
+    ctx.State.all = [
+      { id: 'a1', status: 'Offen', applicationDate: '2026-03-01' },
+      { id: 'a2', status: 'Offen', applicationDate: '2026-02-01' },
+    ];
+    await ctx._applyKanbanDrop('a1', 'Offen', 0, { before: 'a2', after: null });
+    assert.deepStrictEqual(ctx.State.kanbanSort, {}, 'keine Sortierung gespeichert');
+    assert.strictEqual(ctx.localStorage.getItem('jt-kanban-sort'), null);
   });
 }
 

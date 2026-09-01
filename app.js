@@ -1582,6 +1582,10 @@ let _touchClone = null;
 let _touchSrc   = null;
 let _lastDropTarget = null;
 let _kanbanDropIndex = null; // Einfüge-Index (unter Karten der Zielspalte), von der Drop-Anzeige
+// Nachbarkarten der Einfügestelle (IDs). Der reine Index oben zählt nur SICHTBARE
+// Karten - bei aktivem Such-/Statusfilter passt er nicht zur ungefilterten
+// Spaltenreihenfolge, in die _applyKanbanDrop() einsortiert.
+let _kanbanDropAnchor = { before: null, after: null };
 let _kanbanDropIndicatorEl = null;
 
 function onDragStart(e, id) {
@@ -1601,7 +1605,7 @@ async function onDrop(e, newStatus) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
   if (!dragId) return;
-  await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex);
+  await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex, _kanbanDropAnchor);
 }
 // Läuft nach onDrop (bei erfolgreichem Ablegen) ODER als einzige Reaktion bei
 // abgebrochenem Drag (z.B. Esc, außerhalb jeder Spalte losgelassen) - dragend
@@ -1623,7 +1627,8 @@ function _updateKanbanDropIndicator(colEl, clientY) {
     const r = cards[i].getBoundingClientRect();
     if (clientY < r.top + r.height / 2) { idx = i; before = cards[i]; break; }
   }
-  _kanbanDropIndex = idx;
+  _kanbanDropIndex  = idx;
+  _kanbanDropAnchor = { before: before?.dataset.id || null, after: cards[idx - 1]?.dataset.id || null };
   if (!_kanbanDropIndicatorEl) {
     _kanbanDropIndicatorEl = document.createElement('div');
     _kanbanDropIndicatorEl.className = 'kanban-drop-indicator';
@@ -1633,7 +1638,8 @@ function _updateKanbanDropIndicator(colEl, clientY) {
 }
 function _clearKanbanDropIndicator() {
   _kanbanDropIndicatorEl?.remove();
-  _kanbanDropIndex = null;
+  _kanbanDropIndex  = null;
+  _kanbanDropAnchor = { before: null, after: null };
 }
 
 // ── Touch support (iOS Safari doesn't fire drag events) ─────────────────────
@@ -1643,7 +1649,11 @@ function _clearKanbanDropIndicator() {
 // sich die Kanban-Spalte auf dem Handy überhaupt nicht mehr scrollen, sobald der
 // Finger auf einer Karte lag.
 const TOUCH_DRAG_THRESHOLD_PX = 8;
-const TOUCH_DRAG_HOLD_MS      = 220;
+// Bewusst im Bereich eines echten Langdrucks (iOS/Android nehmen ~500 ms): bei den
+// vorherigen 220 ms wurde schon ein kurzes Zögern vor dem Wischen als Ziehen gewertet,
+// und die Spalte sprang beim Loslassen auf "Eigene Reihenfolge". Wer wirklich ziehen
+// will, greift den Anfasser links auf der Karte - dort startet der Drag sofort.
+const TOUCH_DRAG_HOLD_MS      = 500;
 let _touchStartPos  = null;
 let _touchHoldTimer = null;
 
@@ -1718,6 +1728,14 @@ function _cancelTouchDrag() {
   _clearKanbanDropIndicator();
 }
 
+// Scrollt die Spalte oder die Seite, während der Finger noch auf einer Karte liegt,
+// war die Berührung als Scrollen gemeint - der wartende Halte-Timer darf daraus keinen
+// Drag machen. Ein bereits laufender Drag ist davon nicht betroffen: der blockiert das
+// Scrollen ohnehin (onTouchMove -> preventDefault).
+document.addEventListener('scroll', () => {
+  if (_touchSrc && !_touchClone) _cancelTouchDrag();
+}, { capture: true, passive: true });
+
 async function onTouchEnd(e) {
   clearTimeout(_touchHoldTimer);
   // Ohne begonnenen Drag war das eine normale Berührung (Tippen/Scrollen) - der
@@ -1729,28 +1747,50 @@ async function onTouchEnd(e) {
   if (_lastDropTarget) {
     _lastDropTarget.classList.remove('drag-over');
     const newStatus = _lastDropTarget.dataset.status;
-    if (newStatus && dragId) await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex);
+    if (newStatus && dragId) await _applyKanbanDrop(dragId, newStatus, _kanbanDropIndex, _kanbanDropAnchor);
     _lastDropTarget = null;
   }
   _clearKanbanDropIndicator();
   dragId = null; _touchSrc = null; _touchStartPos = null;
 }
 
+// Bestimmt aus der Drop-Anzeige die Einfügeposition innerhalb der (ungefilterten)
+// Spaltenreihenfolge `order`. Bevorzugt über die Nachbarkarten der Anzeige, weil deren
+// Index bei aktivem Such-/Statusfilter nicht mit dem gezählten Index übereinstimmt:
+// die Anzeige kennt nur die sichtbaren Karten, `order` auch die ausgeblendeten.
+function _kanbanDropPosition(order, insertIndex, anchor) {
+  const before = anchor?.before ? order.indexOf(anchor.before) : -1;
+  if (before > -1) return before;
+  const after = anchor?.after ? order.indexOf(anchor.after) : -1;
+  if (after > -1) return after + 1;
+  return insertIndex == null ? order.length : Math.min(insertIndex, order.length);
+}
+
 // Wendet einen Kanban-Drop an: ändert bei Bedarf den Status (Spaltenwechsel) und
-// setzt die Zielspalte immer auf "Eigene Reihenfolge" mit der Karte an der per
+// setzt die Zielspalte auf "Eigene Reihenfolge" mit der Karte an der per
 // Drop-Anzeige markierten Position - manuelles Umsortieren soll nicht von der
 // nächsten Sortierung (z.B. nach Datum) sofort wieder verworfen werden.
-async function _applyKanbanDrop(id, newStatus, insertIndex) {
+async function _applyKanbanDrop(id, newStatus, insertIndex, anchor) {
   const app = State.all.find(a => a.id === id);
   if (!app) return;
 
   // Gegen State.all, nicht State.filtered: bei aktivem Such-/Statusfilter fielen die
   // gerade ausgeblendeten Karten sonst aus der gespeicherten Reihenfolge und landeten
   // hinterher am Spaltenende.
-  const existing = sortAppsForKanban(State.all.filter(a => a.status === newStatus), newStatus)
-    .map(a => a.id).filter(cid => cid !== id);
-  const idx = insertIndex == null ? existing.length : Math.min(insertIndex, existing.length);
-  existing.splice(idx, 0, id);
+  const current  = sortAppsForKanban(State.all.filter(a => a.status === newStatus), newStatus).map(a => a.id);
+  const existing = current.filter(cid => cid !== id);
+  existing.splice(_kanbanDropPosition(existing, insertIndex, anchor), 0, id);
+
+  // Ein Drop, der die Karte genau dort ablegt, wo sie ohnehin stand, darf nichts
+  // umstellen. Auf dem Handy entsteht so ein Leerlauf-Drop leicht versehentlich
+  // (Karte kurz gehalten, Finger minimal bewegt) - er würde die Spalte sonst dauerhaft
+  // auf "Eigene Reihenfolge" umschalten und damit ihre Sortierung einfrieren: neue
+  // Bewerbungen hängen sich danach unten an, statt sich nach Datum einzusortieren.
+  const unchanged = app.status === newStatus
+    && existing.length === current.length
+    && existing.every((cid, i) => cid === current[i]);
+  if (unchanged) return;
+
   State.kanbanSort[newStatus] = { col: 'custom', dir: 'asc', order: existing };
   saveKanbanSort();
 
