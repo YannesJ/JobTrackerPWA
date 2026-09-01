@@ -1153,6 +1153,20 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   border-radius: var(--r-lg);
   isolation: isolate;
 }
+
+/* Ohne diese Regel wurde das Canvas in seiner reinen Bitmap-Größe dargestellt und
+   blieb winzig - der Hauptgrund, warum schwächere Webcams den Code nicht lasen.
+   pixelated hält die Modulkanten beim Hochskalieren hart; würde der Browser sie
+   weichzeichnen, verwischen gerade die kleinen Module ineinander. */
+#qr-send-canvas {
+  display: block;
+  width: min(76vw, 380px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border-radius: 4px;
+}
 .qr-glow::before {
   content: '';
   position: absolute; inset: -18px;

@@ -1106,7 +1106,9 @@
 
 <!-- QR GERÄTE-SYNC: SENDEN (zeigt rotierende QR-Codes) -->
 <div id="qr-send-modal" role="dialog" aria-modal="true" aria-label="QR-Code anzeigen" class="modal-backdrop hidden" onclick="if(event.target===this)closeQRSendModal()">
-  <div class="modal-box" style="max-width:400px">
+  <!-- Breiter als die übrigen Dialoge: je größer der Code physisch angezeigt wird,
+       desto mehr Kamerapixel entfallen auf ein Modul - siehe #qr-send-canvas. -->
+  <div class="modal-box" style="max-width:460px">
     <div class="modal-header">
       <div>
         <h2 style="font-size:1rem;margin-bottom:2px">QR-Code anzeigen</h2>

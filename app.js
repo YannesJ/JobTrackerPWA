@@ -3881,10 +3881,22 @@ function syncToDropbox() { toast('Dropbox Sync - Coming Soon', 'info'); }
 const QR_SYNC_PROTOCOL_VERSION = 1;
 const QR_SYNC_SCHEMA_VERSION   = 1; // Version des JSON-Payload-Formats (unabhängig vom Chunk-Protokoll)
 const QR_SYNC_HEADER_BYTES     = 12;
-const QR_SYNC_CHUNK_PAYLOAD_BYTES = 700;
-const QR_SYNC_FRAME_INTERVAL_MS   = 220; // ~4.5 Frames/Sek. - zuverlässig scanbar
+// Nutzlast pro Code - der wichtigste Hebel für die Scanbarkeit, weil sie die
+// QR-Version und damit die Anzahl der Module bestimmt. Gemessen bei EC-Level M:
+//   700 B -> Version 22 = 105x105 Module    200 B -> Version 10 = 57x57 Module
+// Mit 105 Modulen auf einem Handydisplay kommt eine gewöhnliche Webcam (oft nur
+// 640x480) auf unter 2 Kamerapixel pro Modul - jsQR braucht etwa 3-4. Der Code war
+// damit an schwachen Kameras praktisch nicht lesbar. Kleinere Chunks kosten fast
+// nichts: die Daten werden gzip-komprimiert, selbst 100 Bewerbungen bleiben unter
+// ~1 KB und damit bei einer Handvoll Codes.
+const QR_SYNC_CHUNK_PAYLOAD_BYTES = 200;
+// Etwas langsamer als zuvor (220 ms): schwache Kameras brauchen pro Bild Zeit für
+// Belichtung und Autofokus. Verpasste Frames holt der nächste Durchlauf ohnehin ein.
+const QR_SYNC_FRAME_INTERVAL_MS   = 280;
 const QR_SYNC_MAX_LOOP_MS = 5 * 60 * 1000; // Sicherheits-Stop, falls der Nutzer das Modal vergisst
-const QR_SEND_CANVAS_PX   = 320; // Ziel-Kantenlänge der Bitmap; die Anzeigegröße macht das CSS
+// Ziel-Kantenlänge der Bitmap. Bei 57+8 Modulen ergibt das 11 px pro Modul (vorher 2),
+// die Anzeigegröße legt zusätzlich das CSS fest.
+const QR_SEND_CANVAS_PX   = 720;
 
 /** Kleinste QR-Version, die den GRÖSSTEN Chunk fasst - einmal bestimmt und dann für
  *  alle Frames verwendet, damit der angezeigte Code seine Größe nicht ändert.
@@ -4175,7 +4187,16 @@ async function openQRScanModal(conflictRule) {
   }
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // Ohne Auflösungswunsch liefern viele Browser nur 640x480 - zu wenig, um die
+    // einzelnen QR-Module aufzulösen. 1920x1080 ist ein Wunsch (ideal), kein Zwang:
+    // Kameras, die das nicht können, liefern weiterhin ihr Bestmögliches.
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'environment',
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    });
   } catch (err) {
     toast('Kamera-Zugriff wird für den Geräte-Sync benötigt. Bitte in den Browser-Einstellungen erlauben.', 'error');
     return;
