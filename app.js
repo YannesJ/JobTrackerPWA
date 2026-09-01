@@ -933,6 +933,7 @@ async function loadAll() {
   applyFilters();
   updateCounts();
   updateBadge(); // refresh badge count whenever data changes
+  renderDemoBanner(); // Hinweis verschwindet, sobald die letzten Beispieldaten weg sind
 }
 
 async function saveApp(app) {
@@ -995,12 +996,15 @@ function cleanupOrphanedNotificationKeys(liveIds) {
 }
 
 // ─── Demo-Daten für neue, leere Installationen ─────────────────────────────────
+// Füllt Board UND Kalender, damit die App beim allerersten Aufruf nicht leer wirkt.
 // Läuft nur EIN einziges Mal überhaupt, gesteuert über das jt-demo-seeded-Flag,
 // und schreibt nur, wenn zu diesem Zeitpunkt noch gar keine Bewerbung existiert.
 // Bestehende Nutzer mit eigenen Daten sind dadurch sicher, und zwar dauerhaft:
 // Das Flag wird gesetzt, BEVOR geprüft wird ob leer geschrieben werden darf - ein
 // späteres Leeren der Liste (z.B. "Alle Daten löschen") lässt die Demo-Daten also
-// nicht wieder auftauchen, weil dieser Check dann schon "erledigt" ist.
+// nicht wieder auftauchen, weil dieser Check dann schon "erledigt" ist. Aus demselben
+// Grund hängt auch das Schreiben der Termine an diesem einen Bewerbungs-Check: wer
+// schon Bewerbungen hat, bekommt weder Demo-Bewerbungen noch Demo-Termine.
 async function maybeSeedDemoData() {
   if (localStorage.getItem('jt-demo-seeded')) return;
   localStorage.setItem('jt-demo-seeded', '1');
@@ -1008,14 +1012,97 @@ async function maybeSeedDemoData() {
 
   const daysAgo    = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); };
   const isoDaysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); };
-  const demoNote   = 'Demo-Eintrag - kann jederzeit gelöscht werden.';
 
+  // Ein Datum in der LAUFENDEN Woche (0 = Montag), nie in der Zukunft. Das Wochenziel
+  // im Dashboard zählt Bewerbungen ab Montag 00:00 - mit festen "vor n Tagen"-Werten
+  // schwankte der Zähler je nach Wochentag des ersten Aufrufs. Genau drei Einträge
+  // hängen an dieser Funktion, damit dort verlässlich 3/5 steht. Wird am Montag
+  // geseedet, rutschen alle drei auf den Montag; die Zahl stimmt trotzdem.
+  const _weekDay = (offsetFromMonday) => {
+    const now = new Date();
+    const sinceMonday = (now.getDay() || 7) - 1; // Mo=0 … So=6
+    const d = new Date(now);
+    d.setDate(now.getDate() - sinceMonday + Math.min(offsetFromMonday, sinceMonday));
+    return d;
+  };
+  const thisWeek    = (o) => localDateStr(_weekDay(o));
+  const isoThisWeek = (o) => _weekDay(o).toISOString();
+  // Alle übrigen Einträge liegen bei >= 9 Tagen und damit sicher vor dem Wochenstart
+  // (der höchstens 6 Tage zurückliegt) - sie dürfen das Wochenziel nicht hochzählen.
+
+  const demoNote = 'Demo-Eintrag - kann jederzeit gelöscht werden.';
+  const withNote = (text) => text ? `${text}\n\n${demoNote}` : demoNote;
+
+  // 14 Bewerbungen: genug Substanz, damit Quellen-Balken und Absagegrund-Kreis im
+  // Dashboard etwas zu zeigen haben, ohne die Liste unübersichtlich zu machen.
+  // Verteilung: 5 offen, 3 Interview, 5 Absagen, 1 Zusage.
+  // Gehälter: Schnitt exakt 86.000 EUR, Spanne 65.000 - 110.000, je zur Rolle passend.
   const demoApps = [
+    // ── Diese Woche eingereicht (Wochenziel 3/5) ──────────────────────────────
     {
-      id: uuid(), company: 'Blaupause Software GmbH', position: 'Frontend Developer (React)',
-      status: 'Interview', source: 'LinkedIn', expectedSalary: 62000,
-      applicationDate: daysAgo(21), platformLink: '', documentLink: '', rejectionReason: '',
+      id: uuid(), isDemo: true, company: 'Perlmutt Apps GmbH', position: 'Mobile Developer (iOS)',
+      status: 'Offen', source: 'Xing', expectedSalary: 84000, priority: 2,
+      applicationDate: thisWeek(0), platformLink: '', documentLink: '', rejectionReason: '',
       contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [{ status: 'Offen', timestamp: isoThisWeek(0) }],
+      createdAt: isoThisWeek(0), updatedAt: isoThisWeek(0),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Nordwind Logistik AG', position: 'Supply Chain Manager',
+      status: 'Offen', source: 'Indeed', expectedSalary: 74000, priority: 2,
+      applicationDate: thisWeek(1), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [{ status: 'Offen', timestamp: isoThisWeek(1) }],
+      createdAt: isoThisWeek(1), updatedAt: isoThisWeek(1),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Kranich Systems GmbH', position: 'Senior Backend Developer (Java)',
+      status: 'Offen', source: 'Unternehmenswebsite', expectedSalary: 98000, priority: 3,
+      applicationDate: thisWeek(2), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [{ status: 'Offen', timestamp: isoThisWeek(2) }],
+      createdAt: isoThisWeek(2), updatedAt: isoThisWeek(2),
+    },
+
+    // ── Länger offen ──────────────────────────────────────────────────────────
+    {
+      id: uuid(), isDemo: true, company: 'Ankerpunkt Digital GmbH', position: 'Scrum Master',
+      status: 'Offen', source: 'Karrieremesse', expectedSalary: 88000, priority: 1,
+      applicationDate: daysAgo(9), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '',
+      notes: withNote('Auf der Messe persönlich kennengelernt.'),
+      history: [{ status: 'Offen', timestamp: isoDaysAgo(9) }],
+      createdAt: isoDaysAgo(9), updatedAt: isoDaysAgo(9),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Seeblick Digital AG', position: 'DevOps Engineer (AWS / Kubernetes)',
+      status: 'Offen', source: 'Xing', expectedSalary: 95000, priority: 3,
+      applicationDate: daysAgo(11), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '',
+      notes: withNote('Recruiterin meldet sich diese Woche zum Kennenlernen.'),
+      history: [{ status: 'Offen', timestamp: isoDaysAgo(11) }],
+      createdAt: isoDaysAgo(11), updatedAt: isoDaysAgo(11),
+    },
+
+    // ── Im Gespräch ───────────────────────────────────────────────────────────
+    {
+      id: uuid(), isDemo: true, company: 'Sturmvogel Cloud GmbH', position: 'Cloud Architect',
+      status: 'Interview', source: 'LinkedIn', expectedSalary: 105000, priority: 3,
+      applicationDate: daysAgo(17), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: 'Herr Brandt', contactPhone: '', contactEmail: '',
+      notes: withNote('Zweites Gespräch steht an, Schwerpunkt Architektur.'),
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(17) },
+        { status: 'Interview', timestamp: isoDaysAgo(6), note: 'Erstgespräch lief gut, Team wirkt eingespielt.' },
+      ],
+      createdAt: isoDaysAgo(17), updatedAt: isoDaysAgo(6),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Blaupause Software GmbH', position: 'Frontend Developer (React)',
+      status: 'Interview', source: 'LinkedIn', expectedSalary: 82000, priority: 3,
+      applicationDate: daysAgo(21), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: '', contactPhone: '', contactEmail: '',
+      notes: withNote('Modernes Frontend-Team, Remote-Anteil verhandelbar.'),
       history: [
         { status: 'Offen',     timestamp: isoDaysAgo(21) },
         { status: 'Interview', timestamp: isoDaysAgo(9), note: 'Erstes Gespräch mit dem Tech-Lead, sehr angenehm.' },
@@ -1023,17 +1110,62 @@ async function maybeSeedDemoData() {
       createdAt: isoDaysAgo(21), updatedAt: isoDaysAgo(9),
     },
     {
-      id: uuid(), company: 'Nordwind Logistik AG', position: 'Werkstudent Logistik & Disposition',
-      status: 'Offen', source: 'Indeed', expectedSalary: null,
-      applicationDate: daysAgo(6), platformLink: '', documentLink: '', rejectionReason: '',
+      id: uuid(), isDemo: true, company: 'Morgenstern Analytics GmbH', position: 'Data Scientist',
+      status: 'Interview', source: 'StepStone', expectedSalary: 86000, priority: 2,
+      applicationDate: daysAgo(29), platformLink: '', documentLink: '', rejectionReason: '',
       contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
-      history: [{ status: 'Offen', timestamp: isoDaysAgo(6) }],
-      createdAt: isoDaysAgo(6), updatedAt: isoDaysAgo(6),
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(29) },
+        { status: 'Interview', timestamp: isoDaysAgo(14), note: 'Screening bestanden, technischer Teil steht noch aus.' },
+      ],
+      createdAt: isoDaysAgo(29), updatedAt: isoDaysAgo(14),
+    },
+
+    // ── Abgeschlossen: Zusage ─────────────────────────────────────────────────
+    {
+      id: uuid(), isDemo: true, company: 'Rheinbogen Technik GmbH', position: 'Fachinformatiker Anwendungsentwicklung',
+      status: 'Zusage', source: 'Empfehlung', expectedSalary: 65000, priority: 3,
+      applicationDate: daysAgo(70), platformLink: '', documentLink: '', rejectionReason: '',
+      contactName: 'Frau Keller (Personalabteilung)', contactPhone: '', contactEmail: '',
+      notes: withNote('Vertrag liegt unterschrieben vor.'),
+      history: [
+        { status: 'Offen',     timestamp: isoDaysAgo(70) },
+        { status: 'Interview', timestamp: isoDaysAgo(55) },
+        { status: 'Zusage',    timestamp: isoDaysAgo(40), note: 'Vertrag unterschrieben, Start im September.' },
+      ],
+      createdAt: isoDaysAgo(70), updatedAt: isoDaysAgo(40),
+    },
+
+    // ── Abgeschlossen: Absagen, jede mit eigenem Grund ────────────────────────
+    {
+      id: uuid(), isDemo: true, company: 'Rabenhorst IT-Services', position: 'Systemadministrator',
+      status: 'Absage', source: 'Indeed', expectedSalary: 75000, priority: 1,
+      applicationDate: daysAgo(26), platformLink: '', documentLink: '',
+      rejectionReason: 'Position wurde gestrichen',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',  timestamp: isoDaysAgo(26) },
+        { status: 'Absage', timestamp: isoDaysAgo(12), note: 'Stelle kurzfristig aus dem Budget genommen.' },
+      ],
+      createdAt: isoDaysAgo(26), updatedAt: isoDaysAgo(12),
     },
     {
-      id: uuid(), company: 'Havelperle Consulting', position: 'Junior Consultant',
-      status: 'Absage', source: 'StepStone', expectedSalary: 48000,
-      applicationDate: daysAgo(48), platformLink: '', documentLink: '', rejectionReason: 'Stelle wurde intern besetzt',
+      id: uuid(), isDemo: true, company: 'Lindenhof Software AG', position: 'QA Engineer / Testmanager',
+      status: 'Absage', source: 'StepStone', expectedSalary: 72000, priority: 1,
+      applicationDate: daysAgo(38), platformLink: '', documentLink: '',
+      rejectionReason: 'Zu wenig Berufserfahrung',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',  timestamp: isoDaysAgo(38) },
+        { status: 'Absage', timestamp: isoDaysAgo(25) },
+      ],
+      createdAt: isoDaysAgo(38), updatedAt: isoDaysAgo(25),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Havelperle Consulting', position: 'IT-Consultant',
+      status: 'Absage', source: 'StepStone', expectedSalary: 78000, priority: 1,
+      applicationDate: daysAgo(48), platformLink: '', documentLink: '',
+      rejectionReason: 'Stelle wurde intern besetzt',
       contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
       history: [
         { status: 'Offen',     timestamp: isoDaysAgo(48) },
@@ -1043,20 +1175,133 @@ async function maybeSeedDemoData() {
       createdAt: isoDaysAgo(48), updatedAt: isoDaysAgo(24),
     },
     {
-      id: uuid(), company: 'Rheinbogen Technik GmbH', position: 'Ausbildung Fachinformatiker Anwendungsentwicklung',
-      status: 'Zusage', source: 'Empfehlung', expectedSalary: null,
-      applicationDate: daysAgo(70), platformLink: '', documentLink: '', rejectionReason: '',
-      contactName: 'Frau Keller (Personalabteilung)', contactPhone: '', contactEmail: '', notes: demoNote,
+      id: uuid(), isDemo: true, company: 'Eisvogel Security GmbH', position: 'IT-Security Analyst',
+      status: 'Absage', source: 'LinkedIn', expectedSalary: 92000, priority: 2,
+      applicationDate: daysAgo(54), platformLink: '', documentLink: '',
+      rejectionReason: 'Andere Bewerber besser geeignet',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
       history: [
-        { status: 'Offen',     timestamp: isoDaysAgo(70) },
-        { status: 'Interview', timestamp: isoDaysAgo(55) },
-        { status: 'Zusage',    timestamp: isoDaysAgo(40), note: 'Vertrag unterschrieben, Start im September.' },
+        { status: 'Offen',     timestamp: isoDaysAgo(54) },
+        { status: 'Interview', timestamp: isoDaysAgo(41) },
+        { status: 'Absage',    timestamp: isoDaysAgo(30) },
       ],
-      createdAt: isoDaysAgo(70), updatedAt: isoDaysAgo(40),
+      createdAt: isoDaysAgo(54), updatedAt: isoDaysAgo(30),
+    },
+    {
+      id: uuid(), isDemo: true, company: 'Weitblick Ventures AG', position: 'Engineering Manager',
+      status: 'Absage', source: 'StepStone', expectedSalary: 110000, priority: 1,
+      applicationDate: daysAgo(62), platformLink: '', documentLink: '',
+      rejectionReason: 'Profil passte nicht zur Teamgröße',
+      contactName: '', contactPhone: '', contactEmail: '', notes: demoNote,
+      history: [
+        { status: 'Offen',  timestamp: isoDaysAgo(62) },
+        { status: 'Absage', timestamp: isoDaysAgo(45), note: 'Nach dem Erstgespräch abgesagt worden.' },
+      ],
+      createdAt: isoDaysAgo(62), updatedAt: isoDaysAgo(45),
     },
   ];
 
-  for (const app of demoApps) await idbSet(app.id, app, DB);
+  // Verteilt Wunschabstände (Tage ab heute) auf den laufenden Monat: Der Kalender
+  // öffnet auf dem aktuellen Monat, ein Termin im Folgemonat (Seed kurz vor
+  // Monatsende) wäre für genau diese Besucher unsichtbar. Betroffene Termine
+  // rücken so weit nach vorn wie nötig, ohne auf einem schon belegten Tag zu landen -
+  // sonst lägen am Monatsende alle gestapelt auf demselben Datum. Anschließend
+  // aufsteigend sortiert, damit die Termine in ihrer inhaltlichen Reihenfolge stehen.
+  const spreadInMonth = (offsets) => {
+    const now     = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const used    = new Set();
+    const days    = offsets.map(off => {
+      let day = Math.min(now.getDate() + off, lastDay);
+      while (used.has(day) && day > 1) day--;
+      used.add(day);
+      return day;
+    }).sort((a, b) => a - b);
+    return days.map(day => localDateStr(new Date(now.getFullYear(), now.getMonth(), day)));
+  };
+  const evDates = spreadInMonth([2, 5, 9]);
+
+  // Termine hängen an den Bewerbungen im Gesprächsstadium, damit der Kalender beim
+  // ersten Start nicht leer wirkt und die Verknüpfung gleich sichtbar ist.
+  const byCompany = (name) => demoApps.find(a => a.company === name).id;
+  const demoEvents = [
+    {
+      id: uuid(), isDemo: true, date: evDates[0], time: '09:15', appId: byCompany('Seeblick Digital AG'),
+      title: 'Telefonat mit Recruiterin',
+      note: withNote('Kurzes Kennenlernen, ca. 20 Minuten.'),
+    },
+    {
+      id: uuid(), isDemo: true, date: evDates[1], time: '10:00', appId: byCompany('Blaupause Software GmbH'),
+      title: 'Zweitgespräch (vor Ort)',
+      note: withNote('Team kennenlernen, Gehaltsvorstellung ansprechen.'),
+    },
+    {
+      id: uuid(), isDemo: true, date: evDates[2], time: '14:30', appId: byCompany('Sturmvogel Cloud GmbH'),
+      title: 'Technisches Interview (Remote)',
+      note: withNote('Architektur-Case, Videocall.'),
+    },
+  ];
+
+  for (const app of demoApps)   await idbSet(app.id, app, DB);
+  for (const ev  of demoEvents) await idbSet(ev.id, ev, EVENTS);
+}
+
+// ─── Demo-Daten wieder loswerden ───────────────────────────────────────────────
+// Wer die App produktiv nutzen will, soll mit einem Klick bei null anfangen können,
+// ohne 8 Bewerbungen und 3 Termine einzeln zu löschen - und ohne das grobe
+// "Alle Daten löschen" aus den Einstellungen, das auch schon selbst angelegte
+// Einträge mitnimmt. Entfernt wird ausschließlich, was beim Seed als isDemo
+// markiert wurde; alles andere bleibt unangetastet.
+//
+// Wird eine Demo-Bewerbung im Formular bearbeitet, verliert sie isDemo automatisch
+// (submitForm() baut das Objekt neu auf und übernimmt das Feld nicht) - wer einen
+// Beispieleintrag zu einem echten umschreibt, verliert ihn hier also nicht.
+function demoApps()   { return State.all.filter(a => a.isDemo); }
+function demoEvents() { return State.events.filter(e => e.isDemo); }
+function hasDemoData() { return demoApps().length > 0 || demoEvents().length > 0; }
+
+async function removeDemoData() {
+  const apps = demoApps(), evs = demoEvents();
+  if (!apps.length && !evs.length) return;
+
+  const parts = [];
+  if (apps.length) parts.push(`${apps.length} ${apps.length === 1 ? 'Beispielbewerbung' : 'Beispielbewerbungen'}`);
+  if (evs.length)  parts.push(`${evs.length} ${evs.length === 1 ? 'Beispieltermin' : 'Beispieltermine'}`);
+  const ok = await showConfirm(
+    'Beispieldaten entfernen?',
+    `${parts.join(' und ')} werden entfernt. Selbst angelegte Einträge bleiben erhalten.`,
+    'Entfernen', 'danger'
+  );
+  if (!ok) return;
+
+  // Tombstone statt hartem Löschen - gleiche Begründung wie in deleteApp():
+  // sonst holt ein späterer Geräte-Sync die Beispieldaten von der Gegenseite zurück.
+  const stamp = nowISO();
+  for (const a of apps) {
+    const rec = await idbGet(a.id, DB);
+    if (rec) { rec.deletedAt = stamp; rec.updatedAt = stamp; await idbSet(a.id, rec, DB); }
+    await deleteReminder(a.id);
+  }
+  for (const e of evs) {
+    const rec = await idbGet(e.id, EVENTS);
+    if (rec) { rec.deletedAt = stamp; rec.updatedAt = stamp; await idbSet(e.id, rec, EVENTS); }
+  }
+
+  await loadAll();
+  await loadEvents();
+  renderCalendar();
+  navigate('applications');
+  toast('Beispieldaten entfernt - jetzt kannst du loslegen', 'success');
+}
+
+// Blendet den Hinweis nur ein, solange tatsächlich Beispieldaten vorhanden sind, und
+// nur auf den Seiten, auf denen sie zu sehen sind (nicht in Einstellungen, Info usw.).
+const DEMO_BANNER_PAGES = ['dashboard', 'applications', 'calendar'];
+function renderDemoBanner() {
+  const el = document.getElementById('demo-banner');
+  if (!el) return;
+  const page = document.querySelector('.page.active')?.id?.replace('page-', '') || '';
+  el.classList.toggle('hidden', !(hasDemoData() && DEMO_BANNER_PAGES.includes(page)));
 }
 
 // ─── Kalender-Termine ───────────────────────────────────────────────────────────
@@ -1104,6 +1349,7 @@ function navigate(tab) {
   if (tab === 'calendar')     renderCalendar();
   if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); checkBackupReminder(); }
   if (tab === 'jobsearch')   _jsRestorePortalSelection();
+  renderDemoBanner();
   lucide.createIcons();
 }
 
