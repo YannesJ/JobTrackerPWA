@@ -192,20 +192,22 @@ function applyTableColumnVisibility() {
 // jedem Rendern neu aufbaut - Inline-Styles an den <td> wären danach wieder weg.
 const TABLE_MIN_COL_PX = 60;
 const TABLE_MAX_COL_PX = 640;
+// Nur bekannte Spalten und plausible Werte übernehmen - so kann ein alter, aus einem
+// Backup eingespielter oder manipulierter Eintrag die Tabelle nicht unbrauchbar
+// schmal/breit machen.
+function sanitizeTableWidths(stored) {
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  const keys = new Set(['company', ...TABLE_COLUMNS.map(c => c.key)]);
+  const clean = {};
+  for (const [k, v] of Object.entries(stored)) {
+    const n = Number(v);
+    if (keys.has(k) && Number.isFinite(n)) clean[k] = Math.min(TABLE_MAX_COL_PX, Math.max(TABLE_MIN_COL_PX, Math.round(n)));
+  }
+  return clean;
+}
 function loadTableWidths() {
   try {
-    const stored = JSON.parse(localStorage.getItem('jt-table-widths') || 'null');
-    if (stored && typeof stored === 'object') {
-      // Nur bekannte Spalten und plausible Werte übernehmen - so kann ein alter oder
-      // manipulierter Eintrag die Tabelle nicht unbrauchbar schmal/breit machen.
-      const keys = new Set(['company', ...TABLE_COLUMNS.map(c => c.key)]);
-      const clean = {};
-      for (const [k, v] of Object.entries(stored)) {
-        const n = Number(v);
-        if (keys.has(k) && Number.isFinite(n)) clean[k] = Math.min(TABLE_MAX_COL_PX, Math.max(TABLE_MIN_COL_PX, Math.round(n)));
-      }
-      return clean;
-    }
+    return sanitizeTableWidths(JSON.parse(localStorage.getItem('jt-table-widths') || 'null'));
   } catch { /* ignore malformed data */ }
   return {};
 }
@@ -2364,6 +2366,9 @@ const DEVICE_LOCAL_SETTINGS = ['pushEnabled', 'badgeEnabled'];
 function collectViewPreferences() {
   return {
     tableColumns:       State.tableColumns,
+    // Selbst gezogene Spaltenbreiten gehören zur Ansicht wie die Spaltenauswahl -
+    // ohne sie steht die Tabelle nach einer Wiederherstellung wieder auf Automatik.
+    tableWidths:        State.tableWidths,
     kanbanCardFields:   State.kanbanCardFields,
     kanbanHiddenCols:   [...State.kanbanHiddenCols],
     statusFilterHidden: [...State.statusFilterHidden],
@@ -2382,12 +2387,27 @@ function applyIncomingSettings(settings, { skipDeviceLocal = false } = {}) {
   updateBadge();
 }
 
-/** Gegenstück zu collectViewPreferences(); nur aus einem Backup heraus aufgerufen. */
+// Beim Geräte-Sync geht nur mit, was auf jedem Gerät dasselbe bedeutet: die Felder auf
+// den Kanban-Karten, ausgeblendete Statusspalten und der Statusfilter. Tabellenspalten
+// und selbst gezogene Spaltenbreiten bleiben gerätelokal - ein Handy ist nicht so breit
+// wie ein Desktop, und auf dem Handy greift ohnehin die Kartenliste.
+const SYNC_VIEW_PREF_KEYS = ['kanbanCardFields', 'kanbanHiddenCols', 'statusFilterHidden'];
+function collectBoardPreferences() {
+  const alle = collectViewPreferences();
+  return Object.fromEntries(SYNC_VIEW_PREF_KEYS.map(k => [k, alle[k]]));
+}
+
+/** Gegenstück zu collectViewPreferences(); aus einem Backup oder Geräte-Sync heraus
+ *  aufgerufen. Übernimmt jeweils nur die Schlüssel, die tatsächlich mitgeschickt wurden. */
 function applyViewPreferences(prefs) {
   if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return;
   if (prefs.tableColumns && typeof prefs.tableColumns === 'object') {
     State.tableColumns = { ...DEFAULT_TABLE_COLUMNS, ...prefs.tableColumns };
     saveTableColumns(); applyTableColumnVisibility();
+  }
+  if (prefs.tableWidths && typeof prefs.tableWidths === 'object') {
+    State.tableWidths = sanitizeTableWidths(prefs.tableWidths);
+    saveTableWidths(); applyTableColumnWidths();
   }
   if (prefs.kanbanCardFields && typeof prefs.kanbanCardFields === 'object') {
     State.kanbanCardFields = { ...DEFAULT_KANBAN_CARD_FIELDS, ...prefs.kanbanCardFields };
@@ -2447,7 +2467,29 @@ async function exportData() {
 // Statusfarbe/-typ werden pro Zeile mitexportiert (statt in einer separaten Sektion),
 // da CSV/Excel nur eine flache Tabelle kennt - so bringt jede Zeile ihre eigene
 // Statusdefinition mit und der Import kann daraus den Statuskatalog rekonstruieren.
-const CSV_COLS = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Kartenposition','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen'];
+const CSV_COLS = ['Firma','Position','Status','Statusfarbe','Statustyp','Statusreihenfolge','Kartenposition','Quelle','Datum','Gehalt','Priorität','Absagegrund','Ansprechpartner','Telefon','E-Mail','Stellenanzeige','Unterlagen','Notizen','Verlauf'];
+
+// Der Statusverlauf als eine Zelle: "Offen@2026-01-05|Interview@2026-02-01". Ohne ihn
+// war eine exportierte und wieder eingelesene Bewerbung historisch platt - das
+// Verlaufsdiagramm und die "lange nichts passiert"-Erkennung hingen danach in der Luft.
+// Bewusst kompakt statt als JSON, damit die Spalte in Excel lesbar bleibt; Notizen an
+// einzelnen Verlaufsschritten passen in dieses Format nicht und bleiben JSON-Sache.
+function historyToCsv(history) {
+  return (history || [])
+    .filter(h => h && h.status && h.timestamp)
+    .map(h => `${String(h.status).replace(/[|@]/g, ' ')}@${String(h.timestamp).slice(0, 10)}`)
+    .join('|');
+}
+function csvToHistory(text) {
+  return String(text || '').split('|').map(teil => {
+    const at = teil.lastIndexOf('@');
+    if (at < 1) return null;
+    const status = teil.slice(0, at).trim();
+    const datum  = new Date(teil.slice(at + 1).trim());
+    if (!status || Number.isNaN(datum.getTime())) return null;
+    return { status, timestamp: datum.toISOString() };
+  }).filter(Boolean);
+}
 
 /** Baut Kopfzeile + Datenzeilen (noch ohne BOM/Zeilentrenner) - ausgelagert, damit sich
  *  der Round-Trip Export->Import ohne Datei und ohne Browser testen lässt. */
@@ -2474,7 +2516,7 @@ function buildCsvRows(data) {
       esc(cardPos > -1 ? cardPos + 1 : ''), esc(a.source),
       esc(a.applicationDate), esc(a.expectedSalary ?? ''), esc(a.priority || ''), esc(a.rejectionReason),
       esc(a.contactName), esc(a.contactPhone), esc(a.contactEmail),
-      esc(a.platformLink), esc(a.documentLink), esc(a.notes),
+      esc(a.platformLink), esc(a.documentLink), esc(a.notes), esc(historyToCsv(a.history)),
     ].join(';');
   });
 
@@ -2487,7 +2529,7 @@ function buildCsvRows(data) {
   const used = new Set(data.map(a => a.status));
   const blanks = (n) => Array.from({ length: n }, () => esc(''));
   const catalogRows = State.statuses.filter(s => !used.has(s.name)).map(s =>
-    [esc(''), esc(''), esc(s.name), ...statusMeta(s.name), ...blanks(12)].join(';')
+    [esc(''), esc(''), esc(s.name), ...statusMeta(s.name), ...blanks(13)].join(';')
   );
 
   return [CSV_COLS.join(';'), ...rows, ...catalogRows];
@@ -2520,7 +2562,7 @@ const IMPORT_COL_MAP = {
 };
 // Zusatzspalten, die keine Felder der Bewerbung selbst sind, sondern die Statuskategorie
 // (Farbe/Zähl-Kind) beschreiben, aus der die Zeile stammt - siehe exportCSV().
-const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order', kartenposition:'cardPos' };
+const IMPORT_STATUS_COL_MAP = { statusfarbe:'color', statustyp:'kindLabel', statusreihenfolge:'order', kartenposition:'cardPos', verlauf:'history' };
 
 // Liest eine komplette CSV/TSV-Datei am Stück statt Zeile für Zeile. Zeilenweise ging
 // nicht: eine Notiz mit Zeilenumbruch wird beim Export korrekt als mehrzeiliges
@@ -2638,7 +2680,11 @@ function spreadsheetRowsToApplications(rows) {
 
     if (!app.company) continue; // Katalogzeile - kein Datensatz
     app.status = rowStatus;
-    app.history.push({ status: app.status, timestamp: nowISO() });
+    // Verlauf aus der Verlaufsspalte, falls vorhanden (siehe historyToCsv()). Fehlt sie
+    // - handgeschriebene Datei, Export einer älteren Version -, beginnt der Verlauf wie
+    // bisher mit dem aktuellen Stand.
+    app.history = csvToHistory(statusMeta.history);
+    if (!app.history.length) app.history.push({ status: app.status, timestamp: nowISO() });
     imported.push(app);
 
     const cardPos = Number(statusMeta.cardPos);
@@ -2929,9 +2975,35 @@ async function confirmDestructiveImport(incomingCount) {
   );
 }
 
+/** Führt zwei "Eigene Reihenfolge"-Listen einer Kanban-Spalte zusammen. Die eingehende
+ *  Liste gibt die Reihenfolge vor; Karten, die nur lokal einsortiert sind (auf dem
+ *  anderen Gerät angelegt oder dort noch nicht bekannt), behalten ihren Platz hinter
+ *  demselben Vorgänger wie bisher, statt ans Spaltenende zu rutschen. */
+function mergeKanbanOrder(localOrder, incomingOrder) {
+  const result = [...incomingOrder];
+  const known  = new Set(incomingOrder);
+  for (let i = 0; i < localOrder.length; i++) {
+    const id = localOrder[i];
+    if (known.has(id)) continue;
+    // Nächster Vorgänger aus der lokalen Liste, der in der Zielliste schon steht -
+    // dahinter gehört die Karte. Ohne solchen Vorgänger stand sie lokal ganz oben.
+    let pos = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const p = result.indexOf(localOrder[j]);
+      if (p > -1) { pos = p + 1; break; }
+    }
+    result.splice(pos, 0, id);
+    known.add(id);
+  }
+  return result;
+}
+
 // Übernimmt einen eingehenden Statuskatalog + Kanban-Sortierung (Import/Sync) und
-// frischt alles auf, was davon abhängt.
-function applyIncomingCatalog(statuses, kanbanSort) {
+// frischt alles auf, was davon abhängt. `mergeOrder` beim Geräte-Sync, der Bestände
+// zusammenführt statt sie zu ersetzen - dort darf eine eingehende Reihenfolge die
+// lokal einsortierten Karten nicht verschlucken. Ein Import ersetzt den Bestand
+// komplett, dort gilt die eingehende Reihenfolge unverändert.
+function applyIncomingCatalog(statuses, kanbanSort, { mergeOrder = false } = {}) {
   if (Array.isArray(statuses) && statuses.length) {
     State.statuses = mergeStatusCatalog(State.statuses, statuses);
     saveStatuses();
@@ -2940,7 +3012,16 @@ function applyIncomingCatalog(statuses, kanbanSort) {
     if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
   }
   if (kanbanSort && typeof kanbanSort === 'object' && !Array.isArray(kanbanSort)) {
-    State.kanbanSort = { ...State.kanbanSort, ...sanitizeKanbanSort(kanbanSort) };
+    const eingehend = sanitizeKanbanSort(kanbanSort);
+    if (mergeOrder) {
+      for (const [status, ks] of Object.entries(eingehend)) {
+        const lokal = State.kanbanSort[status];
+        if (ks.col === 'custom' && lokal?.col === 'custom') {
+          ks.order = mergeKanbanOrder(lokal.order || [], ks.order || []);
+        }
+      }
+    }
+    State.kanbanSort = { ...State.kanbanSort, ...eingehend };
     saveKanbanSort();
   }
 }
@@ -4167,8 +4248,8 @@ function _qrSummarizeMerge(beforeApps, mergedApps) {
 // könnte sonst gar nicht mehr syncen. Zusätzliche optionale Felder sind dagegen
 // abwärtskompatibel: ein alter Empfänger liest weiter nur `apps` und ignoriert den
 // Rest. Die Version wird erst bei einer echten Breaking Change hochgezählt.
-function _qrBuildSyncPayload(apps, statuses, kanbanSort, events, reminders, settings) {
-  return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort, events, reminders, settings };
+function _qrBuildSyncPayload(apps, statuses, kanbanSort, events, reminders, settings, preferences) {
+  return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort, events, reminders, settings, preferences };
 }
 
 /** Gegenstück zu _qrBuildSyncPayload(); wirft bei fremdem/kaputtem Inhalt.
@@ -4187,6 +4268,8 @@ function _qrReadSyncPayload(parsed) {
       ? parsed.settings : null,
     kanbanSort: (parsed.kanbanSort && typeof parsed.kanbanSort === 'object' && !Array.isArray(parsed.kanbanSort))
       ? parsed.kanbanSort : {},
+    preferences: (parsed.preferences && typeof parsed.preferences === 'object' && !Array.isArray(parsed.preferences))
+      ? parsed.preferences : null,
   };
 }
 
@@ -4230,7 +4313,7 @@ async function openQRSendModal() {
   const reminders = reminderPairs.map(([, v]) => v);
   if (!apps.length && !events.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
 
-  const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort, events, reminders, State.settings));
+  const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort, events, reminders, State.settings, collectBoardPreferences()));
   const raw   = new TextEncoder().encode(json);
   const { bytes, gzipped } = await _gzipBytes(raw);
   const sessionId = Math.floor(Math.random() * 65536);
@@ -4444,10 +4527,13 @@ async function _qrCommitScan() {
   // Statuskategorien und Kanban-Reihenfolge des sendenden Geräts übernehmen, damit
   // beide Geräte danach wirklich gleich aussehen. Zusammenführen statt ersetzen:
   // eigene Kategorien des Zielgeräts bleiben erhalten.
-  applyIncomingCatalog(incoming?.statuses, incoming?.kanbanSort);
+  applyIncomingCatalog(incoming?.statuses, incoming?.kanbanSort, { mergeOrder: true });
   // Benachrichtigungs-Einstellungen mit, aber ohne die geräteeigenen
   // Erlaubnis-Schalter (siehe DEVICE_LOCAL_SETTINGS).
   applyIncomingSettings(incoming?.settings, { skipDeviceLocal: true });
+  // Board-Ansicht (Kartenfelder, ausgeblendete Spalten, Statusfilter) - siehe
+  // collectBoardPreferences(). Tabellenbreiten bleiben bewusst außen vor.
+  applyViewPreferences(incoming?.preferences);
   await loadAll();
 
   document.getElementById('qr-scan-commit-btn').classList.add('hidden');

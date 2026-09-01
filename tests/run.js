@@ -201,7 +201,9 @@ function loadAppContext() {
         nextEventForApp, localDateStr,
         STATUS_KINDS, sanitizeStatuses, sanitizeKanbanSort, mergeStatusCatalog,
         statusSlot, getStatusColor, getStatusKind, sortAppsForKanban,
-        _kanbanDropPosition, _applyKanbanDrop,
+        _kanbanDropPosition, _applyKanbanDrop, mergeKanbanOrder, applyIncomingCatalog,
+        collectViewPreferences, applyViewPreferences, sanitizeTableWidths,
+        collectBoardPreferences, historyToCsv, csvToHistory,
         parseDelimitedText, buildCsvRows, spreadsheetRowsToApplications,
         normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
@@ -630,6 +632,41 @@ if (ctx) {
     assert.strictEqual(back[0].priority, 2);
   });
 
+  test('CSV-Round-Trip: der Statusverlauf überlebt die Verlaufsspalte', () => {
+    ctx.State.statuses = ctx.sanitizeStatuses([
+      { name: 'Offen', color: '#ff00aa', kind: 'open' },
+      { name: 'Interview', color: '#00ccff', kind: 'interview' },
+    ]);
+    ctx.State.kanbanSort = {};
+    ctx.State.all = [];
+    const history = [
+      { status: 'Offen',     timestamp: '2026-01-05T09:00:00.000Z' },
+      { status: 'Interview', timestamp: '2026-02-01T09:00:00.000Z' },
+    ];
+    const apps = [{ id: 'a1', company: 'Acme', position: 'Dev', status: 'Interview', applicationDate: '2026-01-05', history }];
+    const csv = ctx.buildCsvRows(apps).join('\r\n');
+    assert.match(csv, /Offen@2026-01-05\|Interview@2026-02-01/, 'Verlauf steht als eine lesbare Zelle in der Datei');
+    const { apps: back } = ctx.spreadsheetRowsToApplications(ctx.parseDelimitedText(csv, CSV_DELIM));
+    assert.strictEqual(back[0].history.length, 2, 'beide Schritte kommen zurück');
+    assert.deepStrictEqual(Array.from(back[0].history.map(h => h.status)), ['Offen', 'Interview']);
+    assert.deepStrictEqual(Array.from(back[0].history.map(h => h.timestamp.slice(0, 10))), ['2026-01-05', '2026-02-01']);
+  });
+
+  test('CSV-Import ohne Verlaufsspalte beginnt den Verlauf beim aktuellen Stand', () => {
+    // Handgeschriebene Datei oder Export einer älteren Version - darf nicht leer bleiben.
+    const rows = ctx.parseDelimitedText('Firma;Status\r\n"Acme";"Offen"', CSV_DELIM);
+    const { apps: back } = ctx.spreadsheetRowsToApplications(rows);
+    assert.strictEqual(back[0].history.length, 1);
+    assert.strictEqual(back[0].history[0].status, 'Offen');
+  });
+
+  test('csvToHistory verwirft kaputte Verlaufsschritte, statt Unsinn anzulegen', () => {
+    const out = Array.from(ctx.csvToHistory('Offen@2026-01-05|kaputt|@2026-02-01|Zusage@keindatum'));
+    assert.strictEqual(out.length, 1);
+    assert.strictEqual(out[0].status, 'Offen');
+    assert.strictEqual(ctx.historyToCsv(null), '', 'ohne Verlauf bleibt die Zelle leer');
+  });
+
   test('CSV-Export nimmt Statuskategorien OHNE Bewerbungen mit', () => {
     // Sonst schrumpft der Katalog auf dem Zielgerät auf die tatsächlich benutzten
     // Kategorien zusammen - und weil statusSlot() index-basiert ist, verschieben
@@ -731,13 +768,64 @@ if (ctx) {
     // Der versehentliche Langdruck auf dem Handy: Karte wird an ihrer eigenen Position
     // wieder abgelegt. Die Spalte darf dadurch NICHT auf "Eigene Reihenfolge" springen.
     ctx.State.kanbanSort = {};
+    ctx.localStorage.removeItem('jt-kanban-sort');
     ctx.State.all = [
       { id: 'a1', status: 'Offen', applicationDate: '2026-03-01' },
       { id: 'a2', status: 'Offen', applicationDate: '2026-02-01' },
     ];
-    await ctx._applyKanbanDrop('a1', 'Offen', 0, { before: 'a2', after: null });
-    assert.deepStrictEqual(ctx.State.kanbanSort, {}, 'keine Sortierung gespeichert');
-    assert.strictEqual(ctx.localStorage.getItem('jt-kanban-sort'), null);
+    const lauf = ctx._applyKanbanDrop('a1', 'Offen', 0, { before: 'a2', after: null });
+    // Sofort festhalten: asyncTest wird erst am Dateiende abgewartet, bis dahin haben
+    // die synchronen Tests weiter unten den State längst wieder verändert.
+    const danach = { sort: { ...ctx.State.kanbanSort }, gespeichert: ctx.localStorage.getItem('jt-kanban-sort') };
+    await lauf;
+    assert.deepStrictEqual(danach.sort, {}, 'keine Sortierung gespeichert');
+    assert.strictEqual(danach.gespeichert, null);
+  });
+}
+
+// ─── Geräte-Sync: Kanban-Reihenfolge zusammenführen ────────────────────────────
+if (ctx) {
+  test('mergeKanbanOrder behält lokal einsortierte Karten an ihrem Platz', () => {
+    // Das andere Gerät kennt b nicht (dort neu angelegt und zwischen a und c gezogen).
+    const merge = (l, i) => Array.from(ctx.mergeKanbanOrder(l, i));
+    assert.deepStrictEqual(merge(['a', 'b', 'c'], ['a', 'c']), ['a', 'b', 'c']);
+    assert.deepStrictEqual(merge(['neu', 'a'], ['a', 'b']), ['neu', 'a', 'b'],
+      'ohne Vorgänger stand die Karte lokal ganz oben');
+    assert.deepStrictEqual(merge(['a', 'x', 'y'], ['a', 'b']), ['a', 'x', 'y', 'b'],
+      'mehrere unbekannte Karten bleiben in ihrer lokalen Folge');
+    assert.deepStrictEqual(merge([], ['a', 'b']), ['a', 'b']);
+  });
+
+  test('applyIncomingCatalog führt beim Sync zusammen, beim Import ersetzt es', () => {
+    const eingehend = { Offen: { col: 'custom', dir: 'asc', order: ['a', 'c'] } };
+    ctx.State.kanbanSort = { Offen: { col: 'custom', dir: 'asc', order: ['a', 'b', 'c'] } };
+    ctx.applyIncomingCatalog(null, eingehend, { mergeOrder: true });
+    assert.deepStrictEqual(Array.from(ctx.State.kanbanSort.Offen.order), ['a', 'b', 'c'], 'Sync: b bleibt an seinem Platz');
+
+    ctx.State.kanbanSort = { Offen: { col: 'custom', dir: 'asc', order: ['a', 'b', 'c'] } };
+    ctx.applyIncomingCatalog(null, eingehend);
+    assert.deepStrictEqual(Array.from(ctx.State.kanbanSort.Offen.order), ['a', 'c'], 'Import: Datei gibt die Reihenfolge vor');
+    ctx.State.kanbanSort = {};
+    ctx.localStorage.removeItem('jt-kanban-sort');
+  });
+}
+
+// ─── Backup: Ansichts-Einstellungen vollständig ────────────────────────────────
+if (ctx) {
+  test('collectViewPreferences/applyViewPreferences nehmen die Spaltenbreiten mit', () => {
+    ctx.State.tableWidths = { company: 240, source: 120 };
+    const prefs = ctx.collectViewPreferences();
+    assert.deepStrictEqual({ ...prefs.tableWidths }, { company: 240, source: 120 });
+    ctx.State.tableWidths = {};
+    ctx.applyViewPreferences(prefs);
+    assert.deepStrictEqual({ ...ctx.State.tableWidths }, { company: 240, source: 120 });
+  });
+
+  test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {
+    const out = ctx.sanitizeTableWidths({ company: '240', gibtsNicht: 300, source: 'breit', notes: 99999 });
+    assert.strictEqual(out.company, 240, 'Zahl als Text wird übernommen');
+    assert.ok(!('gibtsNicht' in out) && !('source' in out));
+    assert.ok(out.notes < 99999, 'unplausible Breite wird gedeckelt');
   });
 }
 
@@ -776,12 +864,25 @@ if (ctx) {
     assert.ok(payload.kanbanSort.Offen);
   });
 
+  test('_qrBuildSyncPayload nimmt die Board-Ansicht mit, aber keine Tabellenbreiten', () => {
+    ctx.State.tableWidths = { company: 240 };
+    const prefs = ctx.collectBoardPreferences();
+    assert.ok('kanbanCardFields' in prefs && 'kanbanHiddenCols' in prefs && 'statusFilterHidden' in prefs);
+    assert.ok(!('tableWidths' in prefs) && !('tableColumns' in prefs),
+      'Tabellenmaße sind gerätespezifisch und bleiben lokal');
+    const payload = ctx._qrBuildSyncPayload([{ id: 'a1', company: 'Acme' }], [], {}, [], [], {}, prefs);
+    assert.ok(payload.preferences.kanbanCardFields);
+    const read = ctx._qrReadSyncPayload(JSON.parse(JSON.stringify(payload)));
+    assert.ok(read.preferences.kanbanCardFields, 'und kommt beim Empfänger wieder an');
+  });
+
   test('_qrReadSyncPayload liest auch einen alten Code ohne Statuskatalog', () => {
     // Ein Gerät, das die App noch nicht neu geladen hat, sendet weiter { v:1, apps }.
     const read = ctx._qrReadSyncPayload({ v: 1, apps: [{ id: 'a1', company: 'Acme' }] });
     assert.strictEqual(read.apps.length, 1);
     assert.deepStrictEqual(Array.from(read.statuses), []);
     assert.deepStrictEqual({ ...read.kanbanSort }, {});
+    assert.strictEqual(read.preferences, null, 'fehlende Ansichts-Einstellungen bleiben leer');
   });
 
   test('_qrReadSyncPayload lehnt fremde/kaputte Payloads ab', () => {
