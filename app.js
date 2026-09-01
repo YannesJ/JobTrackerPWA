@@ -185,6 +185,89 @@ function applyTableColumnVisibility() {
   wrap.dataset.hideCols = TABLE_COLUMNS.filter(c => !State.tableColumns[c.key]).map(c => c.key).join(' ');
 }
 
+// ─── Spaltenbreiten (per Ziehen am Spaltenrand) ────────────────────────────────
+// Gespeichert wird nur, was der Nutzer selbst angefasst hat: eine Spalte ohne
+// Eintrag behält die automatische Breite des Browsers. Angewandt wird das über ein
+// injiziertes <style> statt über Inline-Styles, weil renderTable() das <tbody> bei
+// jedem Rendern neu aufbaut - Inline-Styles an den <td> wären danach wieder weg.
+const TABLE_MIN_COL_PX = 60;
+const TABLE_MAX_COL_PX = 640;
+function loadTableWidths() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('jt-table-widths') || 'null');
+    if (stored && typeof stored === 'object') {
+      // Nur bekannte Spalten und plausible Werte übernehmen - so kann ein alter oder
+      // manipulierter Eintrag die Tabelle nicht unbrauchbar schmal/breit machen.
+      const keys = new Set(['company', ...TABLE_COLUMNS.map(c => c.key)]);
+      const clean = {};
+      for (const [k, v] of Object.entries(stored)) {
+        const n = Number(v);
+        if (keys.has(k) && Number.isFinite(n)) clean[k] = Math.min(TABLE_MAX_COL_PX, Math.max(TABLE_MIN_COL_PX, Math.round(n)));
+      }
+      return clean;
+    }
+  } catch { /* ignore malformed data */ }
+  return {};
+}
+function saveTableWidths() {
+  localStorage.setItem('jt-table-widths', JSON.stringify(State.tableWidths));
+}
+function applyTableColumnWidths() {
+  let el = document.getElementById('jt-table-width-styles');
+  if (!el) { el = document.createElement('style'); el.id = 'jt-table-width-styles'; document.head.appendChild(el); }
+  // width allein genügt im auto-Layout nicht - erst min/max nageln die Spalte fest.
+  // Der Zellinhalt wird abgeschnitten statt umgebrochen, sonst wächst die Zeilenhöhe.
+  el.textContent = Object.entries(State.tableWidths).map(([k, w]) => `
+    .table-wrap th[data-col="${k}"], .table-wrap td[data-col="${k}"] {
+      width: ${w}px; min-width: ${w}px; max-width: ${w}px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }`).join('');
+}
+function resetTableColumnWidth(key) {
+  if (!(key in State.tableWidths)) return;
+  delete State.tableWidths[key];
+  saveTableWidths();
+  applyTableColumnWidths();
+}
+
+// Zieh-Griffe an den Spaltenrändern. Pointer-Events decken Maus und Touch in einem ab.
+let _colResize = null;
+function initColumnResizers() {
+  document.querySelectorAll('.table-wrap thead th[data-col]').forEach(th => {
+    if (th.querySelector('.col-resizer')) return; // nicht doppelt einhängen
+    const key = th.dataset.col;
+    const grip = document.createElement('span');
+    grip.className = 'col-resizer';
+    grip.title = 'Breite ziehen, Doppelklick setzt zurück';
+    grip.setAttribute('aria-hidden', 'true');
+    // Der <th> trägt onclick="toggleSort(...)" - ohne das Abfangen hier würde jedes
+    // Ziehen und jeder Doppelklick am Rand zusätzlich die Sortierung umschalten.
+    grip.addEventListener('click',    e => e.stopPropagation());
+    grip.addEventListener('dblclick', e => { e.stopPropagation(); resetTableColumnWidth(key); });
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      _colResize = { key, startX: e.clientX, startW: th.getBoundingClientRect().width };
+      document.body.classList.add('col-resizing');
+      window.addEventListener('pointermove', _onColResizeMove);
+      window.addEventListener('pointerup',     _onColResizeEnd, { once: true });
+      window.addEventListener('pointercancel', _onColResizeEnd, { once: true });
+    });
+    th.appendChild(grip);
+  });
+}
+function _onColResizeMove(e) {
+  if (!_colResize) return;
+  const w = _colResize.startW + (e.clientX - _colResize.startX);
+  State.tableWidths[_colResize.key] = Math.min(TABLE_MAX_COL_PX, Math.max(TABLE_MIN_COL_PX, Math.round(w)));
+  applyTableColumnWidths();
+}
+function _onColResizeEnd() {
+  window.removeEventListener('pointermove', _onColResizeMove);
+  document.body.classList.remove('col-resizing');
+  if (_colResize) saveTableWidths(); // erst am Ende schreiben, nicht bei jedem Pixel
+  _colResize = null;
+}
+
 // ─── Kanban-Karten-Felder (Bewerbungen-Ansicht) ────────────────────────────────
 // Analog zu TABLE_COLUMNS: Firma, Position und der Status-Button bleiben fest auf
 // jeder Karte sichtbar, alles hier ist per "Karten"-Button ein-/ausblendbar.
@@ -605,6 +688,8 @@ const State = {
   statusFilterHidden: loadStatusFilterHidden(),
   // Welche optionalen Tabellenspalten sichtbar sind
   tableColumns: loadTableColumns(),
+  // Vom Nutzer gezogene Spaltenbreiten in px; nicht enthaltene Spalten bleiben automatisch
+  tableWidths:  loadTableWidths(),
   // Welche optionalen Infos auf Kanban-Karten sichtbar sind
   kanbanCardFields: loadKanbanCardFields(),
   // Welche Kanban-Spalten (Statusspalten) ausgeblendet sind - reine Board-Einstellung
@@ -4677,6 +4762,8 @@ if ('serviceWorker' in navigator) {
     document.getElementById('app').classList.add('sidebar-collapsed');
   }
   injectStatusStyles();
+  applyTableColumnWidths();
+  initColumnResizers();
   renderStatusSelectOptions();
   try {
     await idbReady; // sicherstellen, dass alle IndexedDB-Stores angelegt sind, bevor sie genutzt werden

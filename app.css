@@ -893,6 +893,39 @@ th {
   text-align: left;
   user-select: none; -webkit-user-select: none;
 }
+/* Zieh-Griff am rechten Spaltenrand (initColumnResizers() in app.js hängt ihn ein).
+   Liegt im Padding des th, damit er die Beschriftung nicht verdrängt, und wird erst
+   beim Überfahren der Kopfzeile sichtbar - im Ruhezustand soll die Tabelle ruhig
+   aussehen. Auf Touch-Geräten ist er dauerhaft (schwach) sichtbar, weil es dort
+   keinen Hover gibt, über den man ihn sonst je entdecken würde. */
+th { position: relative; }
+.col-resizer {
+  position: absolute;
+  top: 0; right: -3px; bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;           /* sonst scrollt die Seite beim Ziehen auf Touch */
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.col-resizer::before {
+  content: '';
+  position: absolute;
+  top: 22%; bottom: 22%; left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+thead:hover .col-resizer { opacity: .65; }
+.col-resizer:hover, .col-resizer:active { opacity: 1; }
+.col-resizer:hover::before, .col-resizer:active::before { background: var(--accent); }
+@media (hover: none) {
+  .col-resizer { opacity: .45; }
+}
+/* Während des Ziehens: kein Textmarkieren, und der Zeiger bleibt überall der Pfeil */
+body.col-resizing { user-select: none; -webkit-user-select: none; cursor: col-resize; }
+body.col-resizing * { cursor: col-resize !important; }
+
 th.sortable { cursor: pointer; transition: color var(--t-fast); }
 th.sortable:hover { color: var(--text-primary); }
 th.sort-active { color: var(--accent-text); }
