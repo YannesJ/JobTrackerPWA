@@ -39,9 +39,10 @@
 <div id="app">
 
   <aside id="sidebar">
-    <div class="nav-logo">
+    <!-- Klick aufs Logo führt zum Dashboard, wie man es von Web-Apps gewohnt ist -->
+    <button type="button" class="nav-logo" onclick="navigate('dashboard')" title="Zum Dashboard" aria-label="JobTracker - zum Dashboard">
       <!-- Logo mark: layered briefcase with accent ring -->
-      <div class="nav-logo-icon">
+      <span class="nav-logo-icon">
         <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:var(--text-on-accent)">
           <!-- Bag body -->
           <rect x="3" y="10" width="26" height="18" rx="4" fill="currentColor" fill-opacity="0.92"/>
@@ -52,12 +53,12 @@
           <!-- Buckle dot -->
           <rect x="14" y="17" width="4" height="5" rx="2" fill="currentColor" fill-opacity="0.9"/>
         </svg>
-      </div>
+      </span>
       <!-- Wordmark: "Job" bold + "Tracker" light with accent dot -->
       <span class="nav-logo-text">
         <span class="nav-logo-job">Job</span><span class="nav-logo-tracker">Tracker</span><span class="nav-logo-dot">.</span>
       </span>
-    </div>
+    </button>
     <nav style="display:flex;flex-direction:column;gap:2px;">
       <button class="nav-item" data-nav="dashboard" onclick="navigate('dashboard')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>

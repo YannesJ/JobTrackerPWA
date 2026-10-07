@@ -13,12 +13,12 @@ eigenen Quellcode offenzulegen.
 |---|---|---|---|
 | Chart.js | 4.x | MIT | `vendor/chart.js/LICENSE.md` |
 | idb-keyval | 6.3.0 | Apache-2.0 | `vendor/idb-keyval/LICENSE.txt` |
-| Lucide Icons | – | ISC | `vendor/lucide/LICENSE.txt` |
-| jsQR | – | Apache-2.0 | `vendor/qr/jsQR.LICENSE.txt` |
-| qrcode-generator | – | MIT | `vendor/qr/qrcode-generator.LICENSE.txt` |
+| Lucide Icons | - | ISC | `vendor/lucide/LICENSE.txt` |
+| jsQR | - | Apache-2.0 | `vendor/qr/jsQR.LICENSE.txt` |
+| qrcode-generator | - | MIT | `vendor/qr/qrcode-generator.LICENSE.txt` |
 | SheetJS (xlsx) | Community Edition | Apache-2.0 | `vendor/xlsx/LICENSE.txt` |
-| Outfit (Schrift) | – | SIL OFL 1.1 | `vendor/fonts/LICENSE-outfit.txt` |
-| Roboto Mono (Schrift) | – | SIL OFL 1.1 | `vendor/fonts/LICENSE-roboto-mono.txt` |
+| Outfit (Schrift) | - | SIL OFL 1.1 | `vendor/fonts/LICENSE-outfit.txt` |
+| Roboto Mono (Schrift) | - | SIL OFL 1.1 | `vendor/fonts/LICENSE-roboto-mono.txt` |
 
 ## Auflagen im Einzelnen
 
@@ -32,19 +32,19 @@ Beim Aktualisieren einer dieser Komponenten ist erneut zu prüfen, ob eine NOTIC
 hinzugekommen ist.
 
 **SIL OFL 1.1** erlaubt Einbetten und Weitergabe der Schriften, auch kommerziell. Die
-Schriftdateien dürfen nicht für sich allein verkauft werden – als Teil einer Anwendung
+Schriftdateien dürfen nicht für sich allein verkauft werden - als Teil einer Anwendung
 weitergegeben werden dürfen sie. Weder Outfit noch Roboto Mono führen einen Reserved
 Font Name; die Dateien werden unverändert ausgeliefert.
 
 ## Dienste, die zur Laufzeit angesprochen werden
 
-Diese laufen nur, wenn eine Nutzerin sie aktiv auslöst – im Normalbetrieb stellt die
+Diese laufen nur, wenn eine Nutzerin sie aktiv auslöst - im Normalbetrieb stellt die
 App keine Anfragen nach außen.
 
-- **Google Identity Services und Google Drive API** – ausschließlich beim optionalen
+- **Google Identity Services und Google Drive API** - ausschließlich beim optionalen
   Drive-Sync, mit selbst hinterlegten Zugangsdaten. Die Skripte werden erst in diesem
   Moment nachgeladen.
-- **Externe Jobportale und die Google-Suche** – die Seite „Job finden" öffnet
+- **Externe Jobportale und die Google-Suche** - die Seite „Job finden" öffnet
   Suchtreffer in einem neuen Tab. Bei kommerzieller Nutzung sind die
   Nutzungsbedingungen der jeweiligen Portale und der Google-Suche zu prüfen; die
   Portalnamen in der Oberfläche sind Marken der jeweiligen Anbieter und dienen der

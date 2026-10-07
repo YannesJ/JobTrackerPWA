@@ -385,7 +385,7 @@ test('index.html has no remaining third-party CDN references', () => {
 });
 
 test('no em/en dashes in user-facing source files (project convention: use "-")', () => {
-  const files = ['index.html', 'app.js', 'ui.js', 'app.css', 'README.md'];
+  const files = ['index.html', 'app.js', 'ui.js', 'app.css', 'sw.js', 'manifest.json', 'README.md', 'THIRD-PARTY.md'];
   for (const f of files) {
     const content = fs.readFileSync(path.join(ROOT, f), 'utf8');
     const hasDash = /[–—]/.test(content);
