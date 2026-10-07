@@ -360,7 +360,14 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   box-shadow: var(--shadow-xs);
   transition: left var(--t-base), background var(--t-fast), color var(--t-fast);
 }
-.sidebar-collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+/* --bg-hover ist halbtransparent - als alleiniger Hintergrund wurde der Kreis beim
+   Überfahren durchsichtig (Sidebar-Kante schien durch). Daher als Tönung ÜBER den
+   deckenden Grund legen. */
+.sidebar-collapse-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
+}
 .sidebar-collapse-btn svg { transition: transform var(--t-base); }
 @media (max-width: 768px) { .sidebar-collapse-btn { display: none !important; } }
 
