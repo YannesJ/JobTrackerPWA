@@ -1238,7 +1238,10 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   height: 100%;
   width: 0%;
   border-radius: var(--r-full);
-  background: linear-gradient(90deg, rgb(var(--accent-rgb) / .7), var(--accent));
+  /* Bewusst ohne rgb(var(--accent-rgb) / x): --accent-rgb ist kommagetrennt, und
+     "rgb(229,253,93 / .7)" ist ungültiges CSS - der Balken war dadurch nie zu sehen.
+     --accent-dark vorne, damit er sich auch auf hellem Grund vom Track abhebt. */
+  background: linear-gradient(90deg, var(--accent-dark), var(--accent));
   transition: width 160ms ease;
 }
 
@@ -1259,15 +1262,23 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .qr-scan-frame::after {
   content: '';
   position: absolute; inset: 10%;
-  border: 2px solid rgb(var(--accent-rgb) / .85);
+  /* Fester Farbwert statt rgb(var(--accent-rgb) / x) - siehe .qr-progress-bar */
+  border: 2px solid var(--accent);
   border-radius: var(--r-md);
   box-shadow: 0 0 0 999px rgb(0 0 0 / .35);
   animation: qrScanPulse 1.8s ease-in-out infinite;
   pointer-events: none;
 }
+/* Kurzes Aufblinken bei jedem NEU erkannten Code (siehe _qrFlashHit()) - die Rückmeldung,
+   dass die Kamera den Code tatsächlich liest, auch bevor der Zähler weit ist. */
+.qr-scan-frame.qr-scan-hit::after {
+  animation: none;
+  border-color: #22c55e;
+  border-width: 3px;
+}
 @keyframes qrScanPulse {
-  0%, 100% { border-color: rgb(var(--accent-rgb) / .55); }
-  50%      { border-color: rgb(var(--accent-rgb) / 1); }
+  0%, 100% { border-color: var(--accent-dark); }
+  50%      { border-color: var(--accent); }
 }
 
 .qr-result-details {

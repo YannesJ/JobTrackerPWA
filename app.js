@@ -4121,9 +4121,11 @@ const QR_SYNC_HEADER_BYTES     = 12;
 //   700 B -> Version 22 = 105x105 Module    200 B -> Version 10 = 57x57 Module
 // Mit 105 Modulen auf einem Handydisplay kommt eine gewöhnliche Webcam (oft nur
 // 640x480) auf unter 2 Kamerapixel pro Modul - jsQR braucht etwa 3-4. Der Code war
-// damit an schwachen Kameras praktisch nicht lesbar. Kleinere Chunks kosten fast
-// nichts: die Daten werden gzip-komprimiert, selbst 100 Bewerbungen bleiben unter
-// ~1 KB und damit bei einer Handvoll Codes.
+// damit an schwachen Kameras praktisch nicht lesbar. Der Preis sind mehr Codes:
+// gzip-komprimiert kostet eine Bewerbung etwa 150 Byte, 50 Bewerbungen ergeben also
+// rund 38 Codes. Größere Chunks (250-350 B) lasen sich im Test mit 640x480 und leichter
+// Unschärfe nicht mehr - deshalb bleibt es bei 200 B, und die Geschwindigkeit holt
+// stattdessen der Scanner (siehe _qrScanTick()).
 const QR_SYNC_CHUNK_PAYLOAD_BYTES = 200;
 // Etwas langsamer als zuvor (220 ms): schwache Kameras brauchen pro Bild Zeit für
 // Belichtung und Autofokus. Verpasste Frames holt der nächste Durchlauf ohnehin ein.
@@ -4397,8 +4399,13 @@ function _qrRenderSendFrame() {
     }
   }
 
-  const progressEl = document.getElementById('qr-send-progress');
-  if (progressEl) progressEl.style.width = `${((_qrSend.frameIndex % _qrSend.chunks.length) + 1) / _qrSend.chunks.length * 100}%`;
+  const frameText = document.getElementById('qr-send-frame-text');
+  if (frameText) {
+    const total = _qrSend.chunks.length;
+    frameText.textContent = total === 1
+      ? 'Ein einziger Code - einfach scannen.'
+      : `Code ${(_qrSend.frameIndex % total) + 1} von ${total} - läuft in Schleife, bis das andere Gerät fertig ist.`;
+  }
   _qrSend.frameIndex++;
 }
 
@@ -4445,9 +4452,13 @@ async function openQRScanModal(conflictRule) {
 
   const canvas = document.createElement('canvas');
   _qrScan = { stream, canvas, ctx: canvas.getContext('2d', { willReadFrequently: true }),
-              sessionId: null, collected: new Map(), conflictRule, rafId: null };
+              sessionId: null, collected: new Map(), conflictRule, rafId: null,
+              startedAt: Date.now(), lastNewAt: 0, hintTimer: null };
   document.getElementById('qr-scan-progress-text').textContent = 'Suche QR-Code...';
+  document.getElementById('qr-scan-progress').style.width = '0%';
+  document.getElementById('qr-scan-hint').textContent = QR_SCAN_HINT_DEFAULT;
   showModal('qr-scan-modal');
+  _qrScan.hintTimer = setInterval(_qrUpdateScanHint, 1000);
   _qrScanTick(video);
 }
 
@@ -4455,14 +4466,63 @@ function _qrScanTick(video) {
   if (!_qrScan) return;
   const { canvas, ctx } = _qrScan;
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
-    canvas.width  = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const result = jsQR(frame.data, frame.width, frame.height);
+    // Nur das mittlere Quadrat auswerten - genau das zeigt .qr-scan-frame (object-fit:
+    // cover) an, der Nutzer richtet den Code also ohnehin dort aus. Bei 1920x1080 sind
+    // das 1080x1080 statt des ganzen Bildes: jsQR braucht dafür etwa halb so lange, und
+    // auf dem Handy entscheidet genau diese Zeit, wie viele der rotierenden Codes pro
+    // Sekunde ankommen. Gemessen (CPU auf Handy-Niveau gedrosselt): ~350 ms je Bild für
+    // das volle Bild - bei 38 Codes (ca. 50 Bewerbungen) über eine Minute Stillhalten.
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const side = Math.min(vw, vh);
+    // Breite/Höhe nur bei Änderung setzen - jede Zuweisung legt die Bitmap neu an.
+    if (canvas.width !== side) { canvas.width = side; canvas.height = side; }
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, side, side);
+    const frame = ctx.getImageData(0, 0, side, side);
+    // Die Codes sind immer dunkel auf hell (siehe _qrRenderSendFrame) - die invertierte
+    // Suche verdoppelt bei Bildern ohne Treffer nur die Rechenzeit. Jedes fünfte Bild
+    // sucht trotzdem beides, falls das Display des Senders Farben invertiert.
+    _qrScan.tick = (_qrScan.tick || 0) + 1;
+    const result = jsQR(frame.data, side, side, {
+      inversionAttempts: _qrScan.tick % 5 === 0 ? 'attemptBoth' : 'dontInvert',
+    });
     if (result) _qrHandleScannedFrame(new Uint8Array(result.binaryData));
   }
   if (_qrScan) _qrScan.rafId = requestAnimationFrame(() => _qrScanTick(video));
+}
+
+// Hinweise unter dem Kamerabild. Die Codes laufen beim Sender im Kreis, das Handy
+// erwischt jeweils einen zufälligen - die ersten kommen daher schnell, auf die letzten
+// wartet man mehrere Durchläufe. Ohne Erklärung wirkte "21 von 23" wie hängengeblieben.
+const QR_SCAN_HINT_DEFAULT = 'Richte die Kamera auf den Code, den das andere Gerät gerade anzeigt.';
+const QR_SCAN_STALL_MS     = 4000; // so lange ohne neuen Code -> "ruhig halten"-Hinweis
+const QR_SCAN_NO_HIT_MS    = 8000; // so lange ganz ohne Treffer -> Tipps zu Abstand/Licht
+
+function _qrUpdateScanHint() {
+  const hint = document.getElementById('qr-scan-hint');
+  if (!_qrScan || _qrScan.pending || !hint) return;
+  const now = Date.now();
+  const got = _qrScan.collected.size;
+  const total = _qrScan.total || 0;
+  let text = QR_SCAN_HINT_DEFAULT;
+  if (!got && now - _qrScan.startedAt > QR_SCAN_NO_HIT_MS) {
+    text = 'Noch kein Code erkannt. Tipp: Abstand ändern (ca. 20-30 cm), Bildschirm des anderen Geräts heller stellen, Spiegelungen vermeiden.';
+  } else if (got && got < total && now - _qrScan.lastNewAt > QR_SCAN_STALL_MS) {
+    const rest = total - got;
+    text = `Noch ${rest} Code${rest === 1 ? '' : 's'} - Gerät ruhig halten, ${rest === 1 ? 'er kommt' : 'sie kommen'} im nächsten Durchlauf.`;
+  }
+  if (hint.textContent !== text) hint.textContent = text;
+}
+
+/** Rückmeldung bei jedem NEU erkannten Code: Rahmen blinkt grün, Android vibriert kurz
+ *  (iOS-Browser können nicht vibrieren - dort bleibt es beim Blinken). */
+function _qrFlashHit() {
+  const frame = document.querySelector('#qr-scan-modal .qr-scan-frame');
+  if (frame) {
+    frame.classList.add('qr-scan-hit');
+    clearTimeout(_qrFlashHit.timer);
+    _qrFlashHit.timer = setTimeout(() => frame.classList.remove('qr-scan-hit'), 250);
+  }
+  try { navigator.vibrate?.(25); } catch { /* nicht unterstützt */ }
 }
 
 function _qrHandleScannedFrame(bytes) {
@@ -4473,8 +4533,15 @@ function _qrHandleScannedFrame(bytes) {
   if (_qrScan.sessionId === null) _qrScan.sessionId = parsed.sessionId;
   if (parsed.sessionId !== _qrScan.sessionId) return;
 
+  const isNew = !_qrScan.collected.has(parsed.index);
   _qrScan.collected.set(parsed.index, parsed);
   const total = parsed.total;
+  _qrScan.total = total;
+  if (isNew) {
+    _qrScan.lastNewAt = Date.now();
+    _qrFlashHit();
+    _qrUpdateScanHint();
+  }
   const got   = _qrScan.collected.size;
   const progressText = document.getElementById('qr-scan-progress-text');
   if (progressText) progressText.textContent = `${got} von ${total} Code${total === 1 ? '' : 's'} empfangen`;
@@ -4648,6 +4715,7 @@ function toggleQrScanDetails() {
 
 function _qrStopCamera() {
   if (_qrScan?.rafId) cancelAnimationFrame(_qrScan.rafId);
+  if (_qrScan?.hintTimer) clearInterval(_qrScan.hintTimer);
   if (_qrScan?.stream) _qrScan.stream.getTracks().forEach(t => t.stop());
 }
 
