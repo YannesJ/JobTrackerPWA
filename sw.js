@@ -17,7 +17,7 @@ const url = (p) => new URL(p, SCOPE).toString();
 
 // Code der App: darf sich mit jedem Deploy ändern, wird deshalb network-first
 // ausgeliefert (siehe unten).
-const APP_CODE = ['./', './index.html', './app.css', './app.js', './ui.js', './manifest.json'];
+const APP_CODE = ['./', './index.html', './app.css', './app.js', './ui.js', './version.js', './manifest.json'];
 
 // Unveränderliche Beigaben: Bibliotheken und Schriften ändern sich nur, wenn eine
 // neue Datei mit neuem Namen dazukommt - hier ist cache-first richtig.
