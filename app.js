@@ -1044,6 +1044,7 @@ async function loadAll() {
   updateCounts();
   updateBadge(); // refresh badge count whenever data changes
   renderDemoBanner(); // Hinweis verschwindet, sobald die letzten Beispieldaten weg sind
+  refreshChartList(); // offene Diagramm-Liste zeigt sonst den Stand vor der Änderung
 }
 
 async function saveApp(app) {
@@ -5002,6 +5003,7 @@ function _closeTopmostModal() {
     ['ios-install-modal',   dismissInstallModal],
     ['form-modal',          closeForm],
     ['detail-modal',        closeDetail],
+    ['chart-list-modal',    closeChartList],
   ];
   for (const [id, close] of closers) {
     if (!document.getElementById(id)?.classList.contains('hidden')) { close(); return true; }

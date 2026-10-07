@@ -179,7 +179,11 @@ function renderCharts() {
     Charts.weekly = new Chart(wCtx, {
       type: 'bar',
       data: { labels: weekLabels, datasets: [{ data: weekData, backgroundColor: grad, borderRadius: 5, borderSkipped: false }] },
-      options: baseBarOpts(c),
+      options: {
+        ...baseBarOpts(c),
+        ...chartClickOpts(i => openChartList(`Bewerbungen in ${weekLabels[i]}`,
+          a => a.applicationDate && getWeekKey(a.applicationDate) === weekKeys[i])),
+      },
     });
   }
 
@@ -213,6 +217,11 @@ function renderCharts() {
         options: {
           responsive: true, maintainAspectRatio: false,
           cutout: '65%',
+          ...chartClickOpts(i => {
+            const reason = Object.keys(rejMap)[i];
+            openChartList(`Absagen: ${reason}`,
+              a => getStatusKind(a.status) === 'rejected' && (a.rejectionReason?.trim() || 'Kein Grund') === reason);
+          }),
           plugins: {
             legend: {
               position: 'right',
@@ -261,6 +270,12 @@ function renderCharts() {
         },
         options: {
           ...baseBarOpts(c),
+          ...chartClickOpts((i, ds) => {
+            const src = srcLabels[i];
+            const ofSource = a => (a.source || 'Unbekannt') === src;
+            if (ds === 1) openChartList(`${src}: Zusagen`, a => ofSource(a) && getStatusKind(a.status) === 'accepted');
+            else openChartList(`${src}: Interviews`, a => ofSource(a) && ['interview', 'accepted'].includes(getStatusKind(a.status)));
+          }),
           plugins: {
             ...baseBarOpts(c).plugins,
             legend: { labels: { color: c.text, font: { family: c.font, size: 11 }, boxWidth: 11, padding: 10 } },
@@ -280,6 +295,52 @@ function renderCharts() {
       });
     }
   }
+}
+
+// ─── Diagramme anklicken: welche Bewerbungen stecken dahinter? ────────────────
+// Ein Klick auf einen Balken, ein Segment oder einen Verlaufsknoten öffnet die Liste
+// der zugehörigen Bewerbungen; ein Eintrag darin öffnet die Details. Die Auswahl wird
+// als Filterfunktion gemerkt, nicht als feste Liste - so bleibt sie richtig, wenn man
+// aus den Details heraus etwas ändert (siehe refreshChartList() in loadAll()).
+let _chartList = null; // { title, filter }
+
+function openChartList(title, filter) {
+  _chartList = { title, filter };
+  _renderChartList();
+  showModal('chart-list-modal');
+}
+function closeChartList() {
+  _chartList = null;
+  hideModal('chart-list-modal');
+}
+function refreshChartList() {
+  if (_chartList && !document.getElementById('chart-list-modal')?.classList.contains('hidden')) _renderChartList();
+}
+function _renderChartList() {
+  const apps = State.all.filter(_chartList.filter).sort(appComparator('applicationDate', 'desc'));
+  document.getElementById('chart-list-title').textContent = _chartList.title;
+  document.getElementById('chart-list-sub').textContent =
+    apps.length === 1 ? '1 Bewerbung' : `${apps.length} Bewerbungen`;
+  document.getElementById('chart-list').innerHTML = apps.length
+    ? apps.map(a => `
+      <button type="button" class="chart-list-row" onclick="openDetail('${escJs(a.id)}')">
+        <span class="chart-list-main">
+          <span class="chart-list-company">${escHtml(a.company)}</span>
+          <span class="chart-list-position">${escHtml(a.position || '')}</span>
+        </span>
+        <span class="badge ${statusClass(a.status)}">${escHtml(a.status)}</span>
+        <span class="chart-list-date">${a.applicationDate ? fmtDate(a.applicationDate) : '-'}</span>
+      </button>`).join('')
+    : `<p class="chart-list-empty">Keine Bewerbungen (mehr) in dieser Gruppe.</p>`;
+}
+
+/** Chart.js-Optionen für anklickbare Elemente: Klick öffnet die Liste, beim Überfahren
+ *  zeigt der Mauszeiger, dass man klicken kann. */
+function chartClickOpts(onPick) {
+  return {
+    onClick: (evt, elements) => { if (elements.length) onPick(elements[0].index, elements[0].datasetIndex); },
+    onHover: (evt, elements) => { const t = evt.native?.target; if (t) t.style.cursor = elements.length ? 'pointer' : 'default'; },
+  };
 }
 
 function baseBarOpts(c) {
@@ -886,7 +947,7 @@ function buildSankeyModel(apps, mode = 'outcome') {
 
   const touchNode = (step, depth) => {
     const key = `${depth} ${step.id}`;
-    if (!nodes.has(key)) nodes.set(key, { key, label: step.label, depth, value: 0, endCount: 0, order: step.order ?? 0, isStart: depth === 0, color: step.color });
+    if (!nodes.has(key)) nodes.set(key, { key, label: step.label, depth, value: 0, endCount: 0, order: step.order ?? 0, isStart: depth === 0, color: step.color, appIds: [] });
     const n = nodes.get(key);
     n.value++;
     return n;
@@ -910,8 +971,10 @@ function buildSankeyModel(apps, mode = 'outcome') {
     // "Zurückgezogen" kommt vom Nutzer selbst und zählt deshalb nicht.
     if (kinds.some(k => k === 'interview' || k === 'rejected' || k === 'accepted')) counts.responded++;
     let prev = touchNode(start, 0);
+    prev.appIds.push(app.id);
     path.forEach((step, i) => {
       const node = touchNode(step, i + 1);
+      node.appIds.push(app.id);
       touchLink(prev, node);
       prev = node;
     });
@@ -938,6 +1001,16 @@ function _sankeyRibbon(x0, y0a, y0b, x1, y1a, y1b) {
   const cx = (x0 + x1) / 2;
   return `M${x0},${y0a} C${cx},${y0a} ${cx},${y1a} ${x1},${y1a}`
        + ` L${x1},${y1b} C${cx},${y1b} ${cx},${y0b} ${x0},${y0b} Z`;
+}
+
+let _sankeyNodes = [];
+/** Klick auf einen Verlaufsknoten (Balken oder Beschriftung): zugehörige Bewerbungen. */
+function _onSankeyClick(e) {
+  const hit = e.target.closest?.('[data-sk-node]');
+  const n = hit && _sankeyNodes[Number(hit.dataset.skNode)];
+  if (!n) return;
+  const ids = new Set(n.appIds);
+  openChartList(n.isStart ? 'Alle Bewerbungen' : n.label, a => ids.has(a.id));
 }
 
 function renderSankey() {
@@ -1042,13 +1115,15 @@ function renderSankey() {
       + `<title>${escHtml(`${l.from.label} nach ${l.to.label}: ${l.value}`)}</title></path>`;
   }).join('');
 
-  const nodeEls = model.nodes.map(n => {
+  // Für den Klick auf einen Knoten (siehe _onSankeyClick)
+  _sankeyNodes = model.nodes;
+  const nodeEls = model.nodes.map((n, idx) => {
     // Beschriftung der Startsäule steht links, sonst liefe sie in die erste
     // Bänderwolke hinein. Alle übrigen rechts neben ihrem Knoten.
     const labelLeft = n.isStart;
     const tx = labelLeft ? n.x - 9 : n.x + NODE_W + 9;
     const ty = n.y + n.h / 2;
-    return `<g>`
+    return `<g class="sankey-hit" data-sk-node="${idx}">`
       + `<rect class="sankey-node" x="${n.x}" y="${n.y}" width="${NODE_W}" height="${n.h}" rx="3" fill="${escAttr(n.color)}">`
       + `<title>${escHtml(`${n.label}: ${n.value}`)}</title></rect>`
       + `<text class="sankey-label" x="${tx}" y="${ty}" text-anchor="${labelLeft ? 'end' : 'start'}" dominant-baseline="middle">`
@@ -1060,6 +1135,7 @@ function renderSankey() {
       + `</g>`;
   }).join('');
 
+  wrap.onclick = _onSankeyClick;
   wrap.innerHTML = `<svg id="sankey-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"`
     + ` xmlns="http://www.w3.org/2000/svg" role="img"`
     + ` aria-label="Flussdiagramm der Bewerbungen durch die Statuskategorien"`

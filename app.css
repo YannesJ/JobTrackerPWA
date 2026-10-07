@@ -3276,6 +3276,27 @@ button, input, select, textarea { font-family: inherit; }
   stroke-linejoin: round;
 }
 .sankey-note { fill: var(--text-muted); }
+.sankey-hit { cursor: pointer; }
+.sankey-hit:hover .sankey-node { filter: brightness(1.12); }
+
+/* Liste hinter einem Diagramm-Element (openChartList in ui.js) */
+.chart-list { max-height: min(60vh, 520px); overflow-y: auto; margin: 0 -.25rem; }
+.chart-list-row {
+  -webkit-appearance: none; appearance: none;
+  display: flex; align-items: center; gap: .75rem;
+  width: 100%; padding: .6rem .5rem;
+  background: transparent; border: 0; border-bottom: 1px solid var(--border);
+  border-radius: var(--r-sm, 6px);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.chart-list-row:last-child { border-bottom: 0; }
+.chart-list-row:hover { background: var(--bg-hover); }
+.chart-list-row:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.chart-list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chart-list-company { font-weight: 600; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-list-position { font-size: .75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-list-date { font-family: var(--font-mono); font-size: .72rem; color: var(--text-muted); flex-shrink: 0; }
+.chart-list-empty { font-size: .82rem; color: var(--text-muted); text-align: center; padding: 1.5rem 0; }
 .sankey-mode-switch { margin-top: .5rem; width: max-content; }
 
 @media (max-width: 640px) {

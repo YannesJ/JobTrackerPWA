@@ -903,6 +903,26 @@
   </div>
 </div>
 
+<!-- DIAGRAMM-LISTE: welche Bewerbungen hinter einem Balken/Segment stecken. Steht im
+     Dokument vor dem Detail-Modal, damit die Details darüber aufgehen und man beim
+     Schließen wieder in der Liste landet. -->
+<div id="chart-list-modal" role="dialog" aria-modal="true" aria-labelledby="chart-list-title" class="modal-backdrop hidden" onclick="if(event.target===this)closeChartList()">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-header">
+      <div>
+        <h2 id="chart-list-title" style="font-size:1rem;margin-bottom:2px"></h2>
+        <p id="chart-list-sub" style="font-size:.75rem;color:var(--text-muted)"></p>
+      </div>
+      <button class="btn btn-icon" onclick="closeChartList()" title="Schließen" aria-label="Schließen">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding-top:.25rem">
+      <div id="chart-list" class="chart-list"></div>
+    </div>
+  </div>
+</div>
+
 <!-- DETAIL MODAL -->
 <div id="detail-modal" role="dialog" aria-modal="true" aria-label="Details der Bewerbung" class="modal-backdrop hidden" onclick="if(event.target===this)closeDetail()">
   <div class="modal-box">
