@@ -1487,11 +1487,20 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   gap: 12px;
   flex-wrap: wrap;
   padding: 0.75rem 1rem;
-  margin-bottom: 1.25rem;
+  /* Dieselbe Spalte wie der Seiteninhalt (.page: max. 1100px, 2rem Innenabstand) -
+     vorher lief der Banner randlos über die ganze Breite von #main, klebte oben am
+     Rand und stand am Desktop deutlich links neben Überschrift und Karten. */
+  box-sizing: border-box;
+  width: calc(100% - 4rem);
+  max-width: calc(1100px - 4rem);
+  margin: max(2rem, env(safe-area-inset-top, 0px)) auto 0;
   border: 1px dashed var(--border);
   border-radius: var(--r-md);
   background: var(--bg-subtle);
 }
+/* Unter dem Banner braucht die Seite nicht noch einmal den vollen Abstand nach oben
+   (inkl. Safe-Area) - sonst klafft zwischen Banner und Überschrift eine Lücke. */
+.demo-banner:not(.hidden) ~ .page { padding-top: 1.5rem; }
 .demo-banner-icon { display: flex; color: var(--text-muted); flex-shrink: 0; }
 .demo-banner-text {
   display: flex;
@@ -1510,9 +1519,10 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   margin-left: auto;
 }
 @media (max-width: 640px) {
-  .demo-banner { padding: 0.7rem 0.85rem; gap: 10px; }
+  .demo-banner { padding: 0.7rem 0.85rem; gap: 10px; width: calc(100% - 1.75rem); margin-top: max(1rem, env(safe-area-inset-top, 0px)); }
+  .demo-banner:not(.hidden) ~ .page { padding-top: 1rem; }
   .demo-banner-actions { margin-left: 0; width: 100%; }
-  .demo-banner-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .demo-banner-actions .btn { flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; }
 }
 .page-header-left h1 { margin-bottom: 0.2rem; }
 .page-header-subtitle { font-size: 0.82rem; color: var(--text-muted); }
