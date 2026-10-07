@@ -1,5 +1,5 @@
 # Veröffentlicht die App auf GitHub Pages und trägt dabei die Build-Kennung ein
-# (Datum, Uhrzeit, Commit-Kürzel). Angezeigt klein oben in den Einstellungen, damit
+# (Datum, Uhrzeit, Commit-Kürzel). Angezeigt klein unten in den Einstellungen, damit
 # man auf zwei Geräten sieht, ob beide denselben Stand laden.
 # version.js im Repo bleibt ein Platzhalter - die Kennung landet nur im Deploy, nicht
 # als zusätzlicher Commit in main.
