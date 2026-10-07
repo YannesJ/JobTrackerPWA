@@ -1,0 +1,48 @@
+# Veröffentlicht die App auf GitHub Pages und trägt dabei die Build-Kennung ein
+# (Datum, Uhrzeit, Commit-Kürzel). Angezeigt in Einstellungen -> Geräte-Sync und in
+# der Sidebar, damit man auf zwei Geräten sieht, ob beide denselben Stand laden.
+# version.js im Repo bleibt ein Platzhalter - die Kennung landet nur im Deploy, nicht
+# als zusätzlicher Commit in main.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build-Kennung eintragen
+        env:
+          TZ: Europe/Berlin
+        run: |
+          stamp=$(git log -1 --format=%cd --date=format-local:'%Y.%m.%d %H:%M')
+          build="$stamp · ${GITHUB_SHA::7}"
+          sed -i "s|^const APP_BUILD = .*|const APP_BUILD = '$build';|" version.js
+          grep -q "$build" version.js
+          echo "Build: $build"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

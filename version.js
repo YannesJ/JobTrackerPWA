@@ -3,5 +3,6 @@
  */
 
 // Build-Kennung, angezeigt in Einstellungen -> Geräte-Sync und in der Sidebar.
-// Bei jedem Deploy neu setzen, sonst lässt sich zwischen zwei Geräten nichts vergleichen.
-const APP_BUILD = '2026.10.07';
+// Platzhalter: beim Deploy ersetzt .github/workflows/pages.yml die Zeile unten durch
+// Datum, Uhrzeit und Commit-Kürzel. Lokal steht hier daher nur "lokal".
+const APP_BUILD = 'lokal';
