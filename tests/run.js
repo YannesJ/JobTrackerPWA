@@ -208,7 +208,7 @@ function loadAppContext() {
         normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
         _qrParseFrame, _qrBuildRepairFrame, _qrCreateDecoder, _qrDecoderAdd, _qrDecoderResult, _qrSendSchedule,
-        _qrBuildSyncPayload, _qrReadSyncPayload, buildSankeyModel, _sankeySummary,
+        _qrBuildSyncPayload, _qrReadSyncPayload, buildSankeyModel, _sankeySummary, nachweisRows, nachweisPreset,
         _gzipBytes, _gunzipBytes })`,
     sandbox
   );
@@ -1007,6 +1007,31 @@ if (ctx) {
     assert.strictEqual(wn('Vor-Ort', 2).endCount, 1, 'eine Bewerbung steht gerade bei Vor-Ort');
     assert.strictEqual(wn('Noch keine Antwort', 1).value, 2);
     ctx.State.statuses = saved;
+  });
+
+  test('Nachweis fürs Amt: Zeitraum inklusive, ohne Beispieldaten/Gelöschte, ohne Gehalt/Notizen', () => {
+    const apps = [
+      { company: 'B GmbH', position: 'Dev', applicationDate: '2026-09-30', status: 'Offen', source: 'LinkedIn', expectedSalary: 90000, notes: 'geheim' },
+      { company: 'A AG',   position: 'QA',  applicationDate: '2026-09-01', status: 'Absage', rejectionReason: 'Stelle besetzt', contactName: 'Frau X', platformLink: 'https://x.de/1' },
+      { company: 'Demo',   applicationDate: '2026-09-10', status: 'Offen', isDemo: true },
+      { company: 'Weg',    applicationDate: '2026-09-11', status: 'Offen', deletedAt: '2026-09-12' },
+      { company: 'Okt',    applicationDate: '2026-10-01T08:00:00', status: 'Offen' },
+      { company: 'Aug',    applicationDate: '2026-08-31', status: 'Offen' },
+    ];
+    const rows = ctx.nachweisRows(apps, '2026-09-01', '2026-09-30');
+    assert.deepStrictEqual(rows.map(r => r[2]), ['A AG', 'B GmbH'], 'Ränder inklusive, sortiert nach Datum');
+    assert.deepStrictEqual(rows.map(r => r[0]), [1, 2]);
+    assert.strictEqual(rows[0][6], 'Absage (Stelle besetzt)');
+    assert.strictEqual(rows[0][5], 'Frau X');
+    assert.strictEqual(rows[0][7], 'https://x.de/1');
+    assert.ok(!JSON.stringify(rows).includes('90000') && !JSON.stringify(rows).includes('geheim'), 'kein Gehalt, keine Notizen');
+    assert.strictEqual(ctx.nachweisRows(apps, '', '').length, 4, 'ohne Zeitraum: alle außer Demo/Gelöschte');
+    const lm = ctx.nachweisPreset('lastMonth', new Date(2026, 9, 7));
+    assert.deepStrictEqual({ ...lm }, { from: '2026-09-01', to: '2026-09-30' });
+    const jan = ctx.nachweisPreset('lastMonth', new Date(2026, 0, 15));
+    assert.deepStrictEqual({ ...jan }, { from: '2025-12-01', to: '2025-12-31' }, 'Jahreswechsel');
+    const since = ctx.nachweisPreset('sinceLast', new Date(2026, 9, 7), '2026-09-30');
+    assert.deepStrictEqual({ ...since }, { from: '2026-10-01', to: '2026-10-07' });
   });
 
   test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {

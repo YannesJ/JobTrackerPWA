@@ -3279,6 +3279,26 @@ button, input, select, textarea { font-family: inherit; }
 .sankey-hit { cursor: pointer; }
 .sankey-hit:hover .sankey-node { filter: brightness(1.12); }
 
+/* Nachweis fürs Amt (openNachweis in app.js) */
+.nachweis-body { display: flex; flex-direction: column; gap: .875rem; padding-top: .25rem; }
+.nw-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.nw-chip {
+  -webkit-appearance: none; appearance: none;
+  font: inherit; font-size: .75rem; font-weight: 600;
+  padding: .3rem .7rem; border-radius: var(--r-full);
+  background: var(--bg-subtle); color: var(--text-secondary);
+  border: 1px solid var(--border); cursor: pointer;
+}
+.nw-chip:hover { border-color: var(--border-strong); }
+.nw-chip.active { background: var(--accent-faint2); border-color: var(--accent); color: var(--accent-text); }
+.nw-chip:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.nw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.nw-grid .form-label { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.nw-opt { font-weight: 400; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+.nw-count { font-size: .85rem; font-weight: 600; }
+.nw-note { font-size: .72rem; color: var(--text-muted); line-height: 1.5; }
+@media (max-width: 420px) { .nw-grid { grid-template-columns: 1fr; } }
+
 /* Liste hinter einem Diagramm-Element (openChartList in ui.js) */
 .chart-list { max-height: min(60vh, 520px); overflow-y: auto; margin: 0 -.25rem; }
 .chart-list-row {

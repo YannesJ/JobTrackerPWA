@@ -2646,6 +2646,135 @@ function _ensureXLSX() {
   return _xlsxReady;
 }
 
+// ─── Nachweis für die Arbeitsagentur / das Jobcenter ─────────────────────────────
+// Eine abgespeckte Liste der Bewerbungen eines Zeitraums - zum Anhängen an den
+// Nachweis der Eigenbemühungen. Bewusst nur, was das Amt braucht: kein Gehalt, keine
+// Notizen, keine Priorität. Beispieldaten und gelöschte Einträge fallen heraus.
+const NACHWEIS_COLS = ['Nr.', 'Datum', 'Arbeitgeber', 'Stelle', 'Bewerbungsweg', 'Ansprechpartner', 'Stand', 'Stellenanzeige'];
+
+/** Bewerbungstag als YYYY-MM-DD in lokaler Zeit (applicationDate ist mal ein reines
+ *  Datum, mal ein ISO-Zeitstempel). */
+function _nwDay(app) {
+  const v = app?.applicationDate;
+  if (!v) return '';
+  if (typeof v === 'string' && !v.includes('T')) return v.slice(0, 10);
+  const d = new Date(v);
+  return isNaN(d) ? '' : localDateStr(d);
+}
+
+/** Tabellenzeilen des Nachweises für den Zeitraum [from, to] (YYYY-MM-DD, jeweils
+ *  inklusive; leer = offen), älteste zuerst. */
+function nachweisRows(apps, from, to) {
+  const list = (apps || [])
+    .filter(a => a && !a.deletedAt && !a.isDemo)
+    .map(a => ({ a, day: _nwDay(a) }))
+    .filter(({ day }) => day && (!from || day >= from) && (!to || day <= to))
+    .sort((x, y) => x.day.localeCompare(y.day) || String(x.a.company).localeCompare(String(y.a.company)));
+  return list.map(({ a, day }, i) => {
+    const reason = getStatusKind(a.status) === 'rejected' && a.rejectionReason?.trim() ? ` (${a.rejectionReason.trim()})` : '';
+    return [i + 1, fmtDate(day), a.company || '', a.position || '', a.source || '', a.contactName || '',
+            `${a.status || ''}${reason}`, a.platformLink || ''];
+  });
+}
+
+/** Vorschläge für den Zeitraum. "sinceLast" beginnt am Tag nach dem letzten Nachweis. */
+function nachweisPreset(kind, today = new Date(), lastTo = '') {
+  const y = today.getFullYear(), m = today.getMonth();
+  const day = (yy, mm, dd) => localDateStr(new Date(yy, mm, dd));
+  if (kind === 'thisMonth')  return { from: day(y, m, 1),     to: localDateStr(today) };
+  if (kind === 'lastMonth')  return { from: day(y, m - 1, 1), to: day(y, m, 0) };
+  if (kind === 'last3')      return { from: day(y, m - 2, 1), to: localDateStr(today) };
+  if (kind === 'sinceLast' && lastTo) {
+    const [ly, lm, ld] = lastTo.split('-').map(Number);
+    return { from: day(ly, lm - 1, ld + 1), to: localDateStr(today) };
+  }
+  return { from: '', to: '' }; // alle
+}
+
+const _nwLs = {
+  get: (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* nur nicht merken */ } },
+};
+
+function openNachweis() {
+  const last = _nwLs.get('jt-nachweis-last');
+  document.getElementById('nw-name').value  = _nwLs.get('jt-nachweis-name');
+  document.getElementById('nw-kdnr').value  = _nwLs.get('jt-nachweis-kdnr');
+  const sinceBtn = document.getElementById('nw-preset-sinceLast');
+  sinceBtn.classList.toggle('hidden', !last);
+  if (last) sinceBtn.textContent = `Seit letztem Nachweis (${fmtDate(last)})`;
+  setNachweisPreset(last ? 'sinceLast' : 'lastMonth');
+  showModal('nachweis-modal');
+}
+function closeNachweis() { hideModal('nachweis-modal'); }
+
+function setNachweisPreset(kind) {
+  const r = nachweisPreset(kind, new Date(), _nwLs.get('jt-nachweis-last'));
+  document.getElementById('nw-from').value = r.from;
+  document.getElementById('nw-to').value   = r.to;
+  document.querySelectorAll('[data-nw-preset]').forEach(b => b.classList.toggle('active', b.dataset.nwPreset === kind));
+  updateNachweisCount();
+}
+
+function updateNachweisCount() {
+  const from = document.getElementById('nw-from').value;
+  const to   = document.getElementById('nw-to').value;
+  const n = nachweisRows(State.all, from, to).length;
+  const demo = State.all.some(a => a.isDemo);
+  document.getElementById('nw-count').textContent =
+    (n === 1 ? '1 Bewerbung' : `${n} Bewerbungen`) + ' im Zeitraum' + (demo ? ' (Beispieldaten nicht mitgezählt)' : '');
+  document.querySelectorAll('[data-nw-export]').forEach(b => { b.disabled = n === 0; });
+}
+/** Datum von Hand geändert: kein Vorschlag mehr hervorheben. */
+function onNachweisDateInput() {
+  document.querySelectorAll('[data-nw-preset]').forEach(b => b.classList.remove('active'));
+  updateNachweisCount();
+}
+
+async function exportNachweis(format) {
+  const from = document.getElementById('nw-from').value;
+  const to   = document.getElementById('nw-to').value;
+  const name = document.getElementById('nw-name').value.trim();
+  const kdnr = document.getElementById('nw-kdnr').value.trim();
+  _nwLs.set('jt-nachweis-name', name);
+  _nwLs.set('jt-nachweis-kdnr', kdnr);
+  const rows = nachweisRows(State.all, from, to);
+  if (!rows.length) { toast('Im gewählten Zeitraum gibt es keine Bewerbungen', 'info'); return; }
+
+  const zeitraum = from || to ? `${from ? fmtDate(from) : 'Beginn'} bis ${to ? fmtDate(to) : 'heute'}` : 'alle Bewerbungen';
+  const base = `bewerbungsnachweis-${from || 'start'}-bis-${to || localDateStr(new Date())}`;
+  try {
+    if (format === 'xlsx') {
+      await _ensureXLSX();
+      const meta = [['Nachweis über Bewerbungsbemühungen']];
+      if (name) meta.push(['Name', name]);
+      if (kdnr) meta.push(['Kundennummer', kdnr]);
+      meta.push(['Zeitraum', zeitraum], ['Anzahl Bewerbungen', rows.length], []);
+      const ws = XLSX.utils.aoa_to_sheet([...meta, NACHWEIS_COLS, ...rows]);
+      ws['!cols'] = [{ wch: 5 }, { wch: 11 }, { wch: 30 }, { wch: 30 }, { wch: 16 }, { wch: 20 }, { wch: 24 }, { wch: 40 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Nachweis');
+      XLSX.writeFile(wb, `${base}.xlsx`);
+    } else {
+      // Reine Tabelle ohne Kopfblock - so lässt sie sich überall weiterverarbeiten.
+      const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const csv = '\ufeff' + [NACHWEIS_COLS, ...rows].map(r => r.map(esc).join(';')).join('\r\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+      const el = document.createElement('a');
+      el.href = url; el.download = `${base}.csv`;
+      el.click(); URL.revokeObjectURL(url);
+    }
+  } catch (err) {
+    console.error('[Nachweis]', err);
+    toast('Export fehlgeschlagen: ' + (err?.message || err), 'error');
+    return;
+  }
+  // Für "Seit letztem Nachweis" beim nächsten Mal
+  _nwLs.set('jt-nachweis-last', to || localDateStr(new Date()));
+  closeNachweis();
+  toast(`Nachweis mit ${rows.length} Bewerbung${rows.length === 1 ? '' : 'en'} exportiert`, 'success');
+}
+
 // Liest eine CSV/TSV- oder echte .xlsx/.xls-Datei ein und gibt sie einheitlich als
 // Array von Zeilen (je ein Array von Zellwerten, Zeile 0 = Kopfzeile) zur\u00FCck.
 async function parseSpreadsheetRows(file) {
@@ -5004,6 +5133,7 @@ function _closeTopmostModal() {
     ['form-modal',          closeForm],
     ['detail-modal',        closeDetail],
     ['chart-list-modal',    closeChartList],
+    ['nachweis-modal',      closeNachweis],
   ];
   for (const [id, close] of closers) {
     if (!document.getElementById(id)?.classList.contains('hidden')) { close(); return true; }
