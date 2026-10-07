@@ -3256,6 +3256,16 @@ button, input, select, textarea { font-family: inherit; }
   font-weight: 700;
   fill: var(--text-primary);
 }
+/* Beschriftungen in der Mitte liegen auf den abgehenden Bändern - ein Rand in der
+   Kartenfarbe hält sie lesbar. */
+.sankey-label {
+  paint-order: stroke;
+  stroke: var(--bg-elevated);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.sankey-note { fill: var(--text-muted); }
+.sankey-mode-switch { margin-top: .5rem; width: max-content; }
 
 @media (max-width: 640px) {
   .sankey-head { flex-direction: column; align-items: stretch; }

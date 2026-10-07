@@ -169,7 +169,11 @@
           <div class="sankey-head">
             <div>
               <div class="chart-title" style="margin-bottom:2px">Wie deine Bewerbungen gelaufen sind</div>
-              <p class="sankey-sub">Jeder Strang folgt dem tatsächlichen Statusverlauf deiner Einträge.</p>
+              <p class="sankey-sub" id="sankey-sub"></p>
+              <div class="view-switch sankey-mode-switch" role="group" aria-label="Darstellung des Verlaufs">
+                <button class="view-btn active" data-sankey-mode="outcome" onclick="setSankeyMode('outcome')" aria-pressed="true" title="Wie viele geantwortet haben, ins Interview kamen und was daraus wurde">Ergebnis</button>
+                <button class="view-btn" data-sankey-mode="paths" onclick="setSankeyMode('paths')" aria-pressed="false" title="Die tatsächlichen Statusstationen jeder Bewerbung">Statuswege</button>
+              </div>
             </div>
             <div class="sankey-actions">
               <button class="btn btn-ghost btn-sm" onclick="copySankey()" title="Als Bild in die Zwischenablage" aria-label="Verlauf als Bild kopieren">

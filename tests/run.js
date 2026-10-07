@@ -208,7 +208,7 @@ function loadAppContext() {
         normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
         _qrParseFrame, _qrBuildRepairFrame, _qrCreateDecoder, _qrDecoderAdd, _qrDecoderResult, _qrSendSchedule,
-        _qrBuildSyncPayload, _qrReadSyncPayload,
+        _qrBuildSyncPayload, _qrReadSyncPayload, buildSankeyModel, _sankeySummary,
         _gzipBytes, _gunzipBytes })`,
     sandbox
   );
@@ -963,6 +963,48 @@ if (ctx) {
     const ev = ctx._qrSlimEventTombstone({ id: 'e1', title: 'Call', date: '2026-03-01', notes: 'x', deletedAt: '2026-03-02' });
     assert.ok(!('notes' in ev));
     assert.strictEqual(ctx.sanitizeImportedEvents([ev]).length, 1, 'Termin-Vermerk wird angenommen');
+  });
+
+  test('Verlauf "Ergebnis": jede Bewerbung endet sichtbar, Kennzahlen stimmen', () => {
+    const saved = ctx.State.statuses;
+    ctx.State.statuses = [
+      { name: 'Offen', color: '#3b82f6', kind: 'open' }, { name: 'Telefonat', color: '#f59e0b', kind: 'interview' },
+      { name: 'Vor-Ort', color: '#f97316', kind: 'interview' }, { name: 'Absage', color: '#ef4444', kind: 'rejected' },
+      { name: 'Zusage', color: '#22c55e', kind: 'accepted' }, { name: 'Zurückgezogen', color: '#94a3b8', kind: 'other' },
+    ];
+    const h = (...st) => st.map((status, i) => ({ status, timestamp: `2026-0${i + 1}-01T00:00:00Z` }));
+    const apps = [
+      { status: 'Offen', history: h('Offen') },
+      { status: 'Offen', history: [] },                                   // ohne Verlauf
+      { status: 'Absage', history: h('Offen', 'Absage') },
+      { status: 'Vor-Ort', history: h('Offen', 'Telefonat', 'Vor-Ort') },  // läuft noch
+      { status: 'Absage', history: h('Offen', 'Telefonat', 'Absage') },
+      { status: 'Zusage', history: h('Offen', 'Telefonat', 'Vor-Ort', 'Zusage') },
+      { status: 'Zurückgezogen', history: h('Offen', 'Zurückgezogen') },
+    ];
+    const m = ctx.buildSankeyModel(apps, 'outcome');
+    const node = (label, depth) => m.nodes.find(n => n.label === label && n.depth === depth)?.value || 0;
+    assert.strictEqual(node('Bewerbungen', 0), 7);
+    assert.strictEqual(node('Noch keine Antwort', 1), 2);
+    assert.strictEqual(node('Absage', 1), 1);
+    assert.strictEqual(node('Interview', 1), 3, 'eigene Interview-Stufen zählen über den Typ');
+    assert.strictEqual(node('Zurückgezogen', 1), 1);
+    assert.strictEqual(node('Läuft noch', 2), 1);
+    assert.strictEqual(node('Absage nach Interview', 2), 1);
+    assert.strictEqual(node('Zusage', 2), 1);
+    // Nichts verschwindet: alle Enden zusammen = alle Bewerbungen
+    assert.strictEqual(m.nodes.filter(n => n.isEnd).reduce((s, n) => s + n.value, 0), 7);
+    assert.deepStrictEqual({ ...m.counts }, { total: 7, responded: 4, interview: 3, accepted: 1 },
+      'Zurückgezogen ist keine Rückmeldung des Arbeitgebers');
+    assert.ok(ctx._sankeySummary(m.counts).startsWith('4 von 7 mit Rückmeldung (57 %)'));
+
+    const w = ctx.buildSankeyModel(apps, 'paths');
+    const wn = (label, depth) => w.nodes.find(n => n.label === label && n.depth === depth);
+    assert.ok(!wn('Offen', 1), 'kein leerer Schritt "Bewerbungen -> Offen"');
+    assert.strictEqual(wn('Telefonat', 1).value, 3);
+    assert.strictEqual(wn('Vor-Ort', 2).endCount, 1, 'eine Bewerbung steht gerade bei Vor-Ort');
+    assert.strictEqual(wn('Noch keine Antwort', 1).value, 2);
+    ctx.State.statuses = saved;
   });
 
   test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {

@@ -806,22 +806,87 @@ function _sankeyChain(app) {
   return chain;
 }
 
-/** Baut Knoten und Flüsse. Ein Knoten ist ein Paar (Status, Tiefe) - derselbe Status
- *  auf verschiedenen Stufen bleibt getrennt, sonst liefen Bänder rückwärts und das
- *  Bild wäre nicht mehr lesbar. */
-function buildSankeyModel(apps) {
+// Zwei Sichten auf dieselben Daten:
+//  'outcome' (Ergebnis) - beantwortet die Fragen der Jobsuche: Wie viele haben
+//    überhaupt geantwortet, wie viele kamen ins Interview, was ist daraus geworden?
+//    Arbeitet mit den Statustypen (siehe STATUS_KINDS), nicht mit den Namen - eigene
+//    Kategorien wie "Telefoninterview" zählen damit automatisch als Interview.
+//  'paths' (Statuswege) - die tatsächlichen Statusketten, für alle, die eigene Stufen
+//    pflegen und sehen wollen, über welche Stationen es lief.
+// Bisher gab es nur eine Variante der Statuswege, und die hatte zwei Schwächen: jede
+// Bewerbung beginnt mit "Offen", die erste Spalte war also ein leerer Schritt
+// ("14 Bewerbungen -> 14 Offen"); und wer keine Antwort bekam, endete unsichtbar im
+// Knoten "Offen" - gerade die wichtigste Zahl der Jobsuche fehlte im Bild.
+const SANKEY_MODES = ['outcome', 'paths'];
+function getSankeyMode() {
+  try {
+    const m = localStorage.getItem('jt-sankey-mode');
+    if (SANKEY_MODES.includes(m)) return m;
+  } catch { /* Speicher gesperrt - Standard nehmen */ }
+  return 'outcome';
+}
+function setSankeyMode(mode) {
+  if (!SANKEY_MODES.includes(mode)) return;
+  try { localStorage.setItem('jt-sankey-mode', mode); } catch { /* nur nicht merken */ }
+  renderSankey();
+}
+
+/** Farbe eines Statustyps: die der ersten Kategorie dieses Typs im Katalog. */
+function _sankeyKindColor(kind, fallback) {
+  const s = State.statuses.find(st => st.kind === kind);
+  return s ? getStatusColor(s.name) : fallback;
+}
+
+// Reihenfolge innerhalb einer Spalte im Ergebnis-Modus: gut -> schlecht -> offen.
+const SANKEY_OUTCOME_ORDER = { interview: 0, accepted: 1, running: 2, rejected: 3, rejectedAfter: 3, waiting: 4 };
+
+/** Weg einer Bewerbung als Liste von Stationen (ohne den Start). Jede Station:
+ *  { id, label, color, order }. */
+function _sankeyPath(app, mode) {
+  const chain = _sankeyChain(app);
+  const kinds = chain.map(getStatusKind);
+  const cur   = app.status || chain[chain.length - 1];
+  const curKind = getStatusKind(cur);
+  const waiting = { id: 'waiting', label: 'Noch keine Antwort', color: _sankeyKindColor('open', '#3b82f6'), order: SANKEY_OUTCOME_ORDER.waiting };
+
+  if (mode === 'paths') {
+    // Führende "Offen"-Stationen sind der Start selbst - kein eigener Schritt.
+    let i = 0;
+    while (i < chain.length && kinds[i] === 'open') i++;
+    const rest = chain.slice(i);
+    if (!rest.length) return [{ ...waiting, order: 999 }]; // unter allen Katalog-Stationen
+    return rest.map(st => {
+      const idx = State.statuses.findIndex(s => s.name === st);
+      return { id: `s:${st}`, label: st, color: getStatusColor(st), order: idx < 0 ? 99 : idx };
+    });
+  }
+
+  const other = { id: `o:${cur}`, label: cur, color: getStatusColor(cur), order: 3.5 };
+  if (kinds.includes('interview')) {
+    const interview = { id: 'interview', label: 'Interview', color: _sankeyKindColor('interview', '#f59e0b'), order: SANKEY_OUTCOME_ORDER.interview };
+    let end;
+    if (curKind === 'accepted')      end = { id: 'accepted', label: 'Zusage', color: _sankeyKindColor('accepted', '#22c55e'), order: SANKEY_OUTCOME_ORDER.accepted };
+    else if (curKind === 'rejected') end = { id: 'rejectedAfter', label: 'Absage nach Interview', color: _sankeyKindColor('rejected', '#ef4444'), order: SANKEY_OUTCOME_ORDER.rejectedAfter };
+    else if (curKind === 'other')    end = other;
+    else                             end = { id: 'running', label: 'Läuft noch', color: _sankeyKindColor('interview', '#f59e0b'), order: SANKEY_OUTCOME_ORDER.running };
+    return [interview, end];
+  }
+  if (curKind === 'rejected') return [{ id: 'rejected', label: 'Absage', color: _sankeyKindColor('rejected', '#ef4444'), order: SANKEY_OUTCOME_ORDER.rejected }];
+  if (curKind === 'accepted') return [{ id: 'accepted', label: 'Zusage', color: _sankeyKindColor('accepted', '#22c55e'), order: SANKEY_OUTCOME_ORDER.accepted }];
+  if (curKind === 'other')    return [other];
+  return [waiting];
+}
+
+/** Baut Knoten und Flüsse. Ein Knoten ist ein Paar (Station, Tiefe) - dieselbe
+ *  Station auf verschiedenen Stufen bleibt getrennt, sonst liefen Bänder rückwärts
+ *  und das Bild wäre nicht mehr lesbar. */
+function buildSankeyModel(apps, mode = 'outcome') {
   const nodes = new Map();
   const links = new Map();
-  const nodeKey = (label, depth) => `${depth} ${label}`;
 
-  const touchNode = (label, depth, isStart = false) => {
-    const key = nodeKey(label, depth);
-    if (!nodes.has(key)) {
-      nodes.set(key, {
-        key, label, depth, value: 0, isStart,
-        color: isStart ? 'var(--accent-text)' : getStatusColor(label),
-      });
-    }
+  const touchNode = (step, depth) => {
+    const key = `${depth} ${step.id}`;
+    if (!nodes.has(key)) nodes.set(key, { key, label: step.label, depth, value: 0, endCount: 0, order: step.order ?? 0, isStart: depth === 0, color: step.color });
     const n = nodes.get(key);
     n.value++;
     return n;
@@ -832,23 +897,40 @@ function buildSankeyModel(apps) {
     links.get(key).value++;
   };
 
+  const counts = { total: 0, responded: 0, interview: 0, accepted: 0 };
+  const start = { id: 'start', label: SANKEY_START_LABEL, color: 'var(--accent-text)', order: 0 };
   for (const app of apps) {
-    const chain = _sankeyChain(app);
-    if (!chain.length) continue;
-    let prev = touchNode(SANKEY_START_LABEL, 0, true);
-    chain.forEach((status, i) => {
-      const node = touchNode(status, i + 1);
+    const path = _sankeyPath(app, mode);
+    if (!path.length) continue;
+    counts.total++;
+    const kinds = _sankeyChain(app).map(getStatusKind);
+    if (kinds.includes('interview')) counts.interview++;
+    if (getStatusKind(app.status) === 'accepted') counts.accepted++;
+    // Rückmeldung = der Arbeitgeber hat reagiert. Ein neutraler Status wie
+    // "Zurückgezogen" kommt vom Nutzer selbst und zählt deshalb nicht.
+    if (kinds.some(k => k === 'interview' || k === 'rejected' || k === 'accepted')) counts.responded++;
+    let prev = touchNode(start, 0);
+    path.forEach((step, i) => {
+      const node = touchNode(step, i + 1);
       touchLink(prev, node);
       prev = node;
     });
+    prev.endCount++;
   }
 
   const maxDepth = Math.max(0, ...[...nodes.values()].map(n => n.depth));
-  // Endknoten (nichts geht weiter) markieren.
   const hasOutgoing = new Set([...links.values()].map(l => l.from.key));
   for (const n of nodes.values()) n.isEnd = !hasOutgoing.has(n.key);
 
-  return { nodes: [...nodes.values()], links: [...links.values()], maxDepth };
+  return { nodes: [...nodes.values()], links: [...links.values()], maxDepth, counts, mode };
+}
+
+/** Kennzahlen-Zeile über dem Diagramm, z.B. "9 von 14 mit Rückmeldung (64 %)". */
+function _sankeySummary(counts) {
+  const pct = n => counts.total ? Math.round(n / counts.total * 100) : 0;
+  return `${counts.responded} von ${counts.total} mit Rückmeldung (${pct(counts.responded)} %)`
+    + ` · ${counts.interview} im Interview (${pct(counts.interview)} %)`
+    + ` · ${counts.accepted} Zusage${counts.accepted === 1 ? '' : 'n'} (${pct(counts.accepted)} %)`;
 }
 
 /** Kubisches Band zwischen zwei Knotenkanten - oben hin, unten zurück. */
@@ -862,13 +944,27 @@ function renderSankey() {
   const wrap = document.getElementById('sankey-wrap');
   if (!wrap) return;
 
+  const mode = getSankeyMode();
+  document.querySelectorAll('[data-sankey-mode]').forEach(b => {
+    const on = b.dataset.sankeyMode === mode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const sub = document.getElementById('sankey-sub');
+
   const apps = State.all;
   if (!apps.length) {
+    if (sub) sub.textContent = '';
     wrap.innerHTML = `<p class="sankey-empty">Noch keine Bewerbungen erfasst - sobald du welche anlegst, zeichnet sich hier ihr Weg.</p>`;
     return;
   }
 
-  const model = buildSankeyModel(apps);
+  const model = buildSankeyModel(apps, mode);
+  if (sub) {
+    sub.textContent = mode === 'outcome'
+      ? _sankeySummary(model.counts)
+      : 'Jeder Strang folgt dem tatsächlichen Statusverlauf deiner Einträge.';
+  }
   if (!model.links.length) {
     wrap.innerHTML = `<p class="sankey-empty">Noch keine Statuswechsel vorhanden.</p>`;
     return;
@@ -883,7 +979,11 @@ function renderSankey() {
   const NODE_W   = compact ? 10 : 13;
   const GAP      = compact ? 11 : 14;    // Luft zwischen Knoten einer Spalte
   const PAD_T    = 24, PAD_B = 24;
-  const LABEL_W  = compact ? 104 : 150;  // Platz für die Beschriftung rechts vom letzten Knoten
+  // Platz für die Beschriftung rechts vom letzten Knoten - nach der längsten
+  // Beschriftung bemessen ("7 Absage nach Interview (3 aktuell)"), sonst schneidet
+  // der viewBox sie ab. Gleiche grobe Schätzung wie bei PAD_L unten.
+  const lastLabels = model.nodes.filter(n => n.depth === model.maxDepth).map(n => `${n.value} ${n.label}`);
+  const LABEL_W  = Math.ceil(Math.max(compact ? 104 : 150, ...lastLabels.map(t => t.length * (compact ? 11 : 13) * 0.56 + 24)));
   const COL_W    = compact ? 132 : 215;
   const FONT_PX  = compact ? 11 : 13;
   // Die Startsäule wird links beschriftet - der Platz dafür muss sich nach der
@@ -908,9 +1008,10 @@ function renderSankey() {
 
   // ── Knoten positionieren ──────────────────────────────────────────────────
   for (const [depth, list] of byDepth) {
-    // Innerhalb einer Spalte nach Größe sortieren - ruhigeres Bild als in
-    // zufälliger Einfügereihenfolge.
-    list.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    // Feste Reihenfolge innerhalb einer Spalte (Ergebnis: gut -> schlecht -> offen,
+    // Statuswege: wie im Statuskatalog), damit gleiche Dinge immer am selben Platz
+    // stehen; bei Gleichstand die größere Gruppe zuerst.
+    list.sort((a, b) => a.order - b.order || b.value - a.value || a.label.localeCompare(b.label));
     const stackH = list.reduce((s, n) => s + n.value * PER_UNIT, 0) + (list.length - 1) * GAP;
     let y = PAD_T + (bodyH - stackH) / 2;   // vertikal zentriert
     for (const n of list) {
@@ -951,7 +1052,11 @@ function renderSankey() {
       + `<rect class="sankey-node" x="${n.x}" y="${n.y}" width="${NODE_W}" height="${n.h}" rx="3" fill="${escAttr(n.color)}">`
       + `<title>${escHtml(`${n.label}: ${n.value}`)}</title></rect>`
       + `<text class="sankey-label" x="${tx}" y="${ty}" text-anchor="${labelLeft ? 'end' : 'start'}" dominant-baseline="middle">`
-      + `<tspan class="sankey-count">${n.value}</tspan><tspan dx="6">${escHtml(n.label)}</tspan></text>`
+      + `<tspan class="sankey-count">${n.value}</tspan><tspan dx="6">${escHtml(n.label)}</tspan>`
+      // Stationen, an denen ein Teil der Bewerbungen gerade steht und der Rest
+      // weiterging: sonst wäre nicht zu sehen, wo die Differenz geblieben ist.
+      + (n.endCount && !n.isEnd && !n.isStart ? `<tspan class="sankey-note" dx="6">(${n.endCount} aktuell)</tspan>` : '')
+      + `</text>`
       + `</g>`;
   }).join('');
 
@@ -1022,6 +1127,8 @@ function _sankeySvgString({ background = '#ffffff' } = {}) {
     `<style>`
     + `text{font-family:'Outfit',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;fill:${subColor}}`
     + `.sankey-count{font-weight:700;fill:${textColor}}`
+    + `.sankey-label{paint-order:stroke;stroke:${background};stroke-width:4px;stroke-linejoin:round}`
+    + `.sankey-note{font-weight:400;fill:${cs.getPropertyValue('--text-muted').trim() || '#8f8f8a'}}`
     + `</style>`
     + `<rect x="0" y="0" width="100%" height="100%" fill="${background}"/>`);
   return clone.outerHTML;
