@@ -821,6 +821,30 @@ if (ctx) {
     assert.deepStrictEqual({ ...ctx.State.tableWidths }, { company: 240, source: 120 });
   });
 
+  test('Tabellen-Sortierung wird gespeichert und beim Laden wiederhergestellt', () => {
+    ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
+    ctx.toggleSort('company');
+    assert.deepStrictEqual(JSON.parse(ctx.localStorage.getItem('jt-table-sort')), { col: 'company', dir: 'asc' });
+    ctx.toggleSort('company');
+    assert.deepStrictEqual({ ...ctx.loadTableSort() }, { col: 'company', dir: 'desc' }, 'Richtungswechsel bleibt erhalten');
+    ctx.localStorage.setItem('jt-table-sort', JSON.stringify({ col: 'gibtsNicht', dir: 'asc' }));
+    assert.deepStrictEqual({ ...ctx.loadTableSort() }, { col: 'applicationDate', dir: 'desc' }, 'unbekannte Spalte -> Standard');
+    ctx.localStorage.setItem('jt-table-sort', 'not json');
+    assert.deepStrictEqual({ ...ctx.loadTableSort() }, { col: 'applicationDate', dir: 'desc' }, 'kaputtes JSON -> Standard');
+    ctx.localStorage.removeItem('jt-table-sort');
+    ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
+  });
+
+  test('collectViewPreferences/applyViewPreferences nehmen die Tabellen-Sortierung mit', () => {
+    ctx.State.sort = { col: 'expectedSalary', dir: 'asc' };
+    const prefs = JSON.parse(JSON.stringify(ctx.collectViewPreferences()));
+    ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
+    ctx.applyViewPreferences(prefs);
+    assert.deepStrictEqual({ ...ctx.State.sort }, { col: 'expectedSalary', dir: 'asc' });
+    ctx.localStorage.removeItem('jt-table-sort');
+    ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
+  });
+
   test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {
     const out = ctx.sanitizeTableWidths({ company: '240', gibtsNicht: 300, source: 'breit', notes: 99999 });
     assert.strictEqual(out.company, 240, 'Zahl als Text wird übernommen');

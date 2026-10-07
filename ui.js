@@ -383,6 +383,7 @@ function toggleMobileSortMenu(e) {
 
 function setMobileSort(col, dir) {
   State.sort = { col, dir };
+  saveTableSort();
   document.querySelectorAll('.sort-popover').forEach(p => p.remove());
   sortApps();
   renderTable();

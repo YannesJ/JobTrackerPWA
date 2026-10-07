@@ -185,6 +185,29 @@ function applyTableColumnVisibility() {
   wrap.dataset.hideCols = TABLE_COLUMNS.filter(c => !State.tableColumns[c.key]).map(c => c.key).join(' ');
 }
 
+// ─── Tabellen-Sortierung ──────────────────────────────────────────────────────
+// Wird gespeichert, damit die Tabelle beim nächsten Öffnen so sortiert ist, wie der
+// Nutzer sie verlassen hat. Nur Spalten mit Sortier-Kopf (index.html) bzw. Einträgen
+// in MOBILE_SORT_OPTIONS sind gültig - ein alter oder manipulierter Eintrag fällt
+// auf die Standardsortierung zurück.
+const TABLE_SORT_COLS = ['company', 'position', 'status', 'applicationDate', 'expectedSalary', 'priority'];
+const DEFAULT_TABLE_SORT = { col: 'applicationDate', dir: 'desc' };
+function sanitizeTableSort(stored) {
+  if (stored && typeof stored === 'object' && TABLE_SORT_COLS.includes(stored.col) &&
+      (stored.dir === 'asc' || stored.dir === 'desc')) return { col: stored.col, dir: stored.dir };
+  return { ...DEFAULT_TABLE_SORT };
+}
+function loadTableSort() {
+  try {
+    return sanitizeTableSort(JSON.parse(localStorage.getItem('jt-table-sort') || 'null'));
+  } catch { /* ignore malformed data */ }
+  return { ...DEFAULT_TABLE_SORT };
+}
+function saveTableSort() {
+  // Scheitert das Speichern (z.B. voller Speicher), soll das Sortieren selbst trotzdem klappen.
+  try { localStorage.setItem('jt-table-sort', JSON.stringify(State.sort)); } catch { /* ignore */ }
+}
+
 // ─── Spaltenbreiten (per Ziehen am Spaltenrand) ────────────────────────────────
 // Gespeichert wird nur, was der Nutzer selbst angefasst hat: eine Spalte ohne
 // Eintrag behält die automatische Breite des Browsers. Angewandt wird das über ein
@@ -676,7 +699,7 @@ const State = {
   all:     [],
   filtered:[],
   view:    'table',
-  sort:    { col: 'applicationDate', dir: 'desc' },
+  sort:    loadTableSort(),
   // Sortierung je Kanban-Spalte (Datum/Firma/... oder 'custom' nach Drag&Drop-Umsortierung)
   kanbanSort: loadKanbanSort(),
   theme:  localStorage.getItem('jt-theme') || 'light',
@@ -1519,6 +1542,7 @@ function sortAppsForKanban(apps, status) {
 function toggleSort(col) {
   if (State.sort.col === col) State.sort.dir = State.sort.dir === 'asc' ? 'desc' : 'asc';
   else { State.sort.col = col; State.sort.dir = 'asc'; }
+  saveTableSort();
   sortApps();
   renderTable();
   updateSortHeaders();
@@ -2369,6 +2393,7 @@ function collectViewPreferences() {
     // Selbst gezogene Spaltenbreiten gehören zur Ansicht wie die Spaltenauswahl -
     // ohne sie steht die Tabelle nach einer Wiederherstellung wieder auf Automatik.
     tableWidths:        State.tableWidths,
+    tableSort:          State.sort,
     kanbanCardFields:   State.kanbanCardFields,
     kanbanHiddenCols:   [...State.kanbanHiddenCols],
     statusFilterHidden: [...State.statusFilterHidden],
@@ -2408,6 +2433,10 @@ function applyViewPreferences(prefs) {
   if (prefs.tableWidths && typeof prefs.tableWidths === 'object') {
     State.tableWidths = sanitizeTableWidths(prefs.tableWidths);
     saveTableWidths(); applyTableColumnWidths();
+  }
+  if (prefs.tableSort && typeof prefs.tableSort === 'object') {
+    State.sort = sanitizeTableSort(prefs.tableSort);
+    saveTableSort(); sortApps(); updateSortHeaders();
   }
   if (prefs.kanbanCardFields && typeof prefs.kanbanCardFields === 'object') {
     State.kanbanCardFields = { ...DEFAULT_KANBAN_CARD_FIELDS, ...prefs.kanbanCardFields };
