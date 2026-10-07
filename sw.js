@@ -82,7 +82,14 @@ self.addEventListener('fetch', event => {
 
 async function networkFirst(request) {
   try {
-    const response = await fetch(request);
+    // cache: 'no-cache' = beim Server nachfragen, statt den HTTP-Cache des Browsers
+    // ungeprüft zu nehmen. GitHub Pages liefert alles mit max-age=600 aus; ohne das
+    // konnte ein Nutzer bis zu 10 Minuten nach einem Deploy eine neue index.html mit
+    // einer alten ui.js bekommen (oder umgekehrt) - z.B. einen neuen Button, dessen
+    // Funktion es noch nicht gab. Unveränderte Dateien kosten nur eine 304-Antwort.
+    // Bei Navigationen macht der Request-Konstruktor aus mode 'navigate' automatisch
+    // 'same-origin'; redirect bleibt 'manual', Weiterleitungen funktionieren also weiter.
+    const response = await fetch(request, { cache: 'no-cache' });
     if (response.ok) {
       const cache = await caches.open(CACHE_APP_SHELL);
       cache.put(request, response.clone());
