@@ -1487,16 +1487,21 @@ function applyFilters() {
   populateSourceFilter();
 }
 
-function sortApps() {
-  const { col, dir } = State.sort;
-  State.filtered.sort((a, b) => {
+/** Vergleichsfunktion für eine Sortierspalte - gemeinsam für Tabelle, Kanban und den
+ *  CSV-Export, damit überall dieselbe Reihenfolge herauskommt. */
+function appComparator(col, dir) {
+  return (a, b) => {
     let va = a[col] ?? '', vb = b[col] ?? '';
     if (col === 'applicationDate') { va = new Date(va); vb = new Date(vb); }
     if (col === 'expectedSalary' || col === 'priority') { va = Number(va) || 0; vb = Number(vb) || 0; }
     if (va < vb) return dir === 'asc' ? -1 : 1;
     if (va > vb) return dir === 'asc' ?  1 : -1;
     return 0;
-  });
+  };
+}
+
+function sortApps() {
+  State.filtered.sort(appComparator(State.sort.col, State.sort.dir));
 }
 
 function sortKanbanCol(status, col, dir) {
@@ -1528,15 +1533,7 @@ function sortAppsForKanban(apps, status) {
       return ia - ib;
     });
   }
-  const { col, dir } = ks;
-  return [...apps].sort((a, b) => {
-    let va = a[col] ?? '', vb = b[col] ?? '';
-    if (col === 'applicationDate') { va = new Date(va); vb = new Date(vb); }
-    if (col === 'expectedSalary' || col === 'priority') { va = Number(va) || 0; vb = Number(vb) || 0; }
-    if (va < vb) return dir === 'asc' ? -1 : 1;
-    if (va > vb) return dir === 'asc' ?  1 : -1;
-    return 0;
-  });
+  return [...apps].sort(appComparator(ks.col, ks.dir));
 }
 
 function toggleSort(col) {
@@ -2413,10 +2410,12 @@ function applyIncomingSettings(settings, { skipDeviceLocal = false } = {}) {
 }
 
 // Beim Geräte-Sync geht nur mit, was auf jedem Gerät dasselbe bedeutet: die Felder auf
-// den Kanban-Karten, ausgeblendete Statusspalten und der Statusfilter. Tabellenspalten
-// und selbst gezogene Spaltenbreiten bleiben gerätelokal - ein Handy ist nicht so breit
+// den Kanban-Karten, ausgeblendete Statusspalten, der Statusfilter und die Sortierung
+// der Tabelle (die auf dem Handy auch die Kartenliste sortiert). Tabellenspalten und
+// selbst gezogene Spaltenbreiten bleiben gerätelokal - ein Handy ist nicht so breit
 // wie ein Desktop, und auf dem Handy greift ohnehin die Kartenliste.
-const SYNC_VIEW_PREF_KEYS = ['kanbanCardFields', 'kanbanHiddenCols', 'statusFilterHidden'];
+// Ein Empfänger mit älterem App-Stand ignoriert unbekannte Schlüssel einfach.
+const SYNC_VIEW_PREF_KEYS = ['kanbanCardFields', 'kanbanHiddenCols', 'statusFilterHidden', 'tableSort'];
 function collectBoardPreferences() {
   const alle = collectViewPreferences();
   return Object.fromEntries(SYNC_VIEW_PREF_KEYS.map(k => [k, alle[k]]));
@@ -2568,6 +2567,11 @@ async function exportCSV() {
   const pairs = await idbEntries(DB);
   const data  = pairs.map(([,v]) => v).filter(a => !a.deletedAt);
   if (!data.length) { toast('Keine Daten zum Exportieren', 'info'); return; }
+  // Zeilen in der Reihenfolge, die der Nutzer in der Tabelle eingestellt hat - sonst
+  // landen sie in der zufälligen Speicherreihenfolge der Datenbank, und in Excel steht
+  // alles durcheinander. Für den Import ist die Zeilenfolge egal: Status- und
+  // Kartenreihenfolge reisen in eigenen Spalten mit.
+  data.sort(appComparator(State.sort.col, State.sort.dir));
 
   const csv  = '﻿' + buildCsvRows(data).join('\r\n'); // BOM for Excel
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
@@ -4627,8 +4631,8 @@ async function _qrCommitScan() {
   // Benachrichtigungs-Einstellungen mit, aber ohne die geräteeigenen
   // Erlaubnis-Schalter (siehe DEVICE_LOCAL_SETTINGS).
   applyIncomingSettings(incoming?.settings, { skipDeviceLocal: true });
-  // Board-Ansicht (Kartenfelder, ausgeblendete Spalten, Statusfilter) - siehe
-  // collectBoardPreferences(). Tabellenbreiten bleiben bewusst außen vor.
+  // Board-Ansicht (Kartenfelder, ausgeblendete Spalten, Statusfilter) und Tabellen-
+  // Sortierung - siehe collectBoardPreferences(). Tabellenbreiten bleiben bewusst außen vor.
   applyViewPreferences(incoming?.preferences);
   await loadAll();
 

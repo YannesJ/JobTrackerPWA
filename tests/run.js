@@ -845,6 +845,30 @@ if (ctx) {
     ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
   });
 
+  test('Geräte-Sync nimmt die Tabellen-Sortierung mit, Spalten/Breiten nicht', () => {
+    ctx.State.sort = { col: 'priority', dir: 'desc' };
+    const prefs = JSON.parse(JSON.stringify(ctx.collectBoardPreferences()));
+    assert.deepStrictEqual(prefs.tableSort, { col: 'priority', dir: 'desc' });
+    assert.ok(!('tableWidths' in prefs) && !('tableColumns' in prefs));
+    ctx.State.sort = { col: 'applicationDate', dir: 'desc' };
+    ctx.applyViewPreferences(prefs);
+    assert.deepStrictEqual({ ...ctx.State.sort }, { col: 'priority', dir: 'desc' }, 'kommt beim Empfänger an');
+    ctx.applyViewPreferences({ tableSort: { col: 'gibtsNicht', dir: 'asc' } });
+    assert.deepStrictEqual({ ...ctx.State.sort }, { col: 'applicationDate', dir: 'desc' }, 'Unsinn -> Standard');
+    ctx.localStorage.removeItem('jt-table-sort');
+  });
+
+  test('appComparator sortiert wie die Tabelle (für den CSV-Export)', () => {
+    const apps = [
+      { company: 'Beta',  applicationDate: '2026-01-05', expectedSalary: '70000' },
+      { company: 'alpha', applicationDate: '2026-03-01', expectedSalary: 90000 },
+      { company: 'Gamma', applicationDate: '2025-12-24' },
+    ];
+    const by = (col, dir) => [...apps].sort(ctx.appComparator(col, dir)).map(a => a.company).join(',');
+    assert.strictEqual(by('applicationDate', 'desc'), 'alpha,Beta,Gamma');
+    assert.strictEqual(by('expectedSalary', 'asc'), 'Gamma,Beta,alpha', 'fehlendes Gehalt zählt als 0, Text wird Zahl');
+  });
+
   test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {
     const out = ctx.sanitizeTableWidths({ company: '240', gibtsNicht: 300, source: 'breit', notes: 99999 });
     assert.strictEqual(out.company, 240, 'Zahl als Text wird übernommen');
