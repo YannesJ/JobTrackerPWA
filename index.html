@@ -1216,13 +1216,22 @@
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </div>
         <h2>Mehrere Geräte? Kein Problem</h2>
-        <p>Handy und Laptop führen getrennte Listen. Über Einstellungen → Offline-Backup gleichst du sie bei Bedarf per Export/Import ab.</p>
+        <p>Handy und Laptop führen getrennte Listen. Über Einstellungen → Geräte-Sync gleichst du sie per QR-Code ab - ganz ohne Internet und Konto.</p>
+      </div>
+      <!-- Nur sichtbar, wenn wirklich Beispieldaten angelegt wurden (siehe maybeShowOnboarding) -->
+      <div class="onboarding-slide" data-ob-slide="3" data-ob-demo>
+        <div class="onboarding-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+        </div>
+        <h2>Erst ausprobieren, dann loslegen</h2>
+        <p>Ein paar Beispiel-Bewerbungen zeigen dir, was alles geht. Mit „Beispieldaten entfernen“ oben sind sie weg, und du startest direkt mit deinen eigenen - ohne Anmeldung, ohne Konto.</p>
       </div>
 
       <div class="onboarding-dots">
         <button class="onboarding-dot active" data-ob-dot="0" onclick="_obGoTo(0)" aria-label="Schritt 1"></button>
         <button class="onboarding-dot" data-ob-dot="1" onclick="_obGoTo(1)" aria-label="Schritt 2"></button>
         <button class="onboarding-dot" data-ob-dot="2" onclick="_obGoTo(2)" aria-label="Schritt 3"></button>
+        <button class="onboarding-dot" data-ob-dot="3" onclick="_obGoTo(3)" aria-label="Schritt 4" data-ob-demo></button>
       </div>
     </div>
     <div class="modal-footer">

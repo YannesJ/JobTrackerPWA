@@ -5086,7 +5086,7 @@ function dismissInstallBanner() {
 }
 
 // ─── Onboarding-Slider ──────────────────────────────────────────────────────────
-// Zeigt eine kurze 3-Schritte-Einführung, aber nur beim allerersten Besuch auf
+// Zeigt eine kurze Einführung (3 Schritte, mit Beispieldaten 4), aber nur beim allerersten Besuch auf
 // einem wirklich leeren, neuen Gerät. isReturningUser kommt als Snapshot aus dem
 // Init (vor jedem Schreibzugriff erfasst) und fängt zusammen mit vorhandenen
 // Bewerbungen praktisch jeden Bestandsnutzer ab, sodass niemand das Popup
@@ -5099,6 +5099,9 @@ function maybeShowOnboarding(isReturningUser) {
     setTimeout(_maybeShowInstallModal, 900);
     return;
   }
+  // Der Beispieldaten-Schritt ist der letzte und ergibt nur Sinn, wenn auch wirklich
+  // welche angelegt wurden - sonst raus damit, statt etwas zu erklären, das fehlt.
+  if (!State.all.some(a => a.isDemo)) document.querySelectorAll('[data-ob-demo]').forEach(el => el.remove());
   _obStep = 0;
   _obGoTo(0);
   showModal('onboarding-modal');
