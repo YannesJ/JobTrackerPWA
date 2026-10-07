@@ -2710,6 +2710,13 @@ function closeNachweis() { hideModal('nachweis-modal'); }
 
 function setNachweisPreset(kind) {
   const r = nachweisPreset(kind, new Date(), _nwLs.get('jt-nachweis-last'));
+  if (kind === 'all') {
+    // Leere Datumsfelder ("tt.mm.jjjj") sahen kaputt aus - stattdessen den
+    // tatsächlichen Zeitraum von der ersten Bewerbung bis heute eintragen.
+    const days = State.all.filter(a => !a.deletedAt && !a.isDemo).map(_nwDay).filter(Boolean).sort();
+    r.to = localDateStr(new Date());
+    r.from = days[0] || r.to;
+  }
   document.getElementById('nw-from').value = r.from;
   document.getElementById('nw-to').value   = r.to;
   document.querySelectorAll('[data-nw-preset]').forEach(b => b.classList.toggle('active', b.dataset.nwPreset === kind));
@@ -2720,9 +2727,14 @@ function updateNachweisCount() {
   const from = document.getElementById('nw-from').value;
   const to   = document.getElementById('nw-to').value;
   const n = nachweisRows(State.all, from, to).length;
-  const demo = State.all.some(a => a.isDemo);
-  document.getElementById('nw-count').textContent =
-    (n === 1 ? '1 Bewerbung' : `${n} Bewerbungen`) + ' im Zeitraum' + (demo ? ' (Beispieldaten nicht mitgezählt)' : '');
+  const ownTotal = State.all.filter(a => !a.isDemo && !a.deletedAt).length;
+  // Bei 0 sagen, warum - sonst wirken die gesperrten Knöpfe wie ein Fehler.
+  let text;
+  if (n) text = (n === 1 ? '1 Bewerbung' : `${n} Bewerbungen`) + ' im Zeitraum';
+  else if (!ownTotal) text = 'Noch keine eigenen Bewerbungen - Beispieldaten kommen nicht in den Nachweis.';
+  else text = 'Keine Bewerbungen in diesem Zeitraum - wähl einen anderen.';
+  document.getElementById('nw-count').textContent = text;
+  document.getElementById('nw-count').classList.toggle('nw-count-empty', n === 0);
   document.querySelectorAll('[data-nw-export]').forEach(b => { b.disabled = n === 0; });
 }
 /** Datum von Hand geändert: kein Vorschlag mehr hervorheben. */

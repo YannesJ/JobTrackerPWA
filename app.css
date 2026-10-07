@@ -280,6 +280,11 @@ body::after {
   will-change: transform; /* own compositing layer - no repaints */
 }
 [data-theme="dark"] body::after { opacity: 0.055; }
+/* Native Bedienelemente (Kalender-Symbol in Datumsfeldern, Uhrzeit-Picker,
+   Scrollbars) passend zum Design einfärben - ohne das waren die Kalender-Symbole
+   im dunklen Design dunkelgrau auf dunklem Grund und kaum zu sehen. */
+:root, [data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
 
 ::selection { background: var(--accent-faint2); color: var(--accent-text); }
 
@@ -473,6 +478,17 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
 }
 
 /* Reset browser button defaults before applying nav styles */
+/* Gesperrte Buttons müssen auch so aussehen - vorher sah ein gesperrter
+   Primär-Button aus wie ein aktiver, und ein Klick tat einfach nichts. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: grayscale(.4);
+}
+.btn:disabled:hover { transform: none; box-shadow: none; }
+
 button.nav-item {
   -webkit-appearance: none;
   appearance: none;
@@ -3280,7 +3296,7 @@ button, input, select, textarea { font-family: inherit; }
 .sankey-hit:hover .sankey-node { filter: brightness(1.12); }
 
 /* Nachweis fürs Amt (openNachweis in app.js) */
-.nachweis-body { display: flex; flex-direction: column; gap: .875rem; padding-top: .25rem; }
+.nachweis-body { display: flex; flex-direction: column; gap: .875rem; padding-top: 1rem; }
 .nw-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .nw-chip {
   -webkit-appearance: none; appearance: none;
@@ -3296,6 +3312,8 @@ button, input, select, textarea { font-family: inherit; }
 .nw-grid .form-label { display: flex; flex-direction: column; gap: 4px; margin: 0; }
 .nw-opt { font-weight: 400; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
 .nw-count { font-size: .85rem; font-weight: 600; }
+.nw-count-empty { color: var(--text-muted); font-weight: 500; }
+
 .nw-note { font-size: .72rem; color: var(--text-muted); line-height: 1.5; }
 @media (max-width: 420px) { .nw-grid { grid-template-columns: 1fr; } }
 
