@@ -188,7 +188,7 @@ function applyTableColumnVisibility() {
 // ─── Tabellen-Sortierung ──────────────────────────────────────────────────────
 // Wird gespeichert, damit die Tabelle beim nächsten Öffnen so sortiert ist, wie der
 // Nutzer sie verlassen hat. Nur Spalten mit Sortier-Kopf (index.html) bzw. Einträgen
-// in MOBILE_SORT_OPTIONS sind gültig - ein alter oder manipulierter Eintrag fällt
+// in MOBILE_SORT_FIELDS (ui.js) sind gültig - ein alter oder manipulierter Eintrag fällt
 // auf die Standardsortierung zurück.
 const TABLE_SORT_COLS = ['company', 'position', 'status', 'applicationDate', 'expectedSalary', 'priority'];
 const DEFAULT_TABLE_SORT = { col: 'applicationDate', dir: 'desc' };

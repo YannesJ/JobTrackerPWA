@@ -380,16 +380,49 @@ function tooltipStyle() {
 }
 
 // ─── Table / Mobile-Card List ─────────────────────────────────────────────────
-const MOBILE_SORT_OPTIONS = [
-  { col:'applicationDate', dir:'desc', label:'Neueste zuerst' },
-  { col:'applicationDate', dir:'asc',  label:'Älteste zuerst' },
-  { col:'company',         dir:'asc',  label:'Firma A-Z' },
-  { col:'company',         dir:'desc', label:'Firma Z-A' },
-  { col:'status',          dir:'asc',  label:'Status' },
-  { col:'expectedSalary',  dir:'desc', label:'Gehalt ↓' },
-  { col:'expectedSalary',  dir:'asc',  label:'Gehalt ↑' },
-  { col:'priority',        dir:'desc', label:'Priorität ↓' },
+// Feld und Richtung getrennt wählbar. Vorher gab es nur feste Kombinationen ("Status"
+// nur aufsteigend, "Priorität" nur absteigend, "Position" gar nicht) - eine Sortierung,
+// die am Desktop per Spaltenkopf oder per Geräte-Sync kam, stand mobil dann nur als
+// "Sortierung" ohne Haken da und ließ sich nicht umdrehen. Deckt alle TABLE_SORT_COLS ab.
+const MOBILE_SORT_FIELDS = [
+  { col:'applicationDate', label:'Datum',     asc:'Älteste zuerst',     desc:'Neueste zuerst',    defaultDir:'desc' },
+  { col:'company',         label:'Firma',     asc:'A-Z',                desc:'Z-A',               defaultDir:'asc'  },
+  { col:'position',        label:'Position',  asc:'A-Z',                desc:'Z-A',               defaultDir:'asc'  },
+  { col:'status',          label:'Status',    asc:'A-Z',                desc:'Z-A',               defaultDir:'asc'  },
+  { col:'expectedSalary',  label:'Gehalt',    asc:'Niedrigstes zuerst', desc:'Höchstes zuerst',   defaultDir:'desc' },
+  { col:'priority',        label:'Priorität', asc:'Niedrigste zuerst',  desc:'Höchste zuerst',    defaultDir:'desc' },
 ];
+
+function mobileSortLabel() {
+  const f = MOBILE_SORT_FIELDS.find(o => o.col === State.sort.col);
+  return f ? `${f.label}: ${f[State.sort.dir]}` : 'Sortierung';
+}
+
+function _renderMobileSortPopover(popover) {
+  const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const cur = MOBILE_SORT_FIELDS.find(o => o.col === State.sort.col);
+  const dirBtn = (dir, arrow, label) => {
+    const on = State.sort.dir === dir;
+    return `<button type="button" class="view-btn${on ? ' active' : ''}" aria-pressed="${on}"
+      onclick="event.stopPropagation();setMobileSort('${State.sort.col}','${dir}')" title="${escAttr(cur ? cur[dir] : '')}">${arrow} ${label}</button>`;
+  };
+  popover.innerHTML = `
+    <div class="view-switch sort-dir-switch" role="group" aria-label="Sortierrichtung">
+      ${dirBtn('asc', '↑', 'Aufsteigend')}
+      ${dirBtn('desc', '↓', 'Absteigend')}
+    </div>
+    ${MOBILE_SORT_FIELDS.map(o => {
+      const isActive = o.col === State.sort.col;
+      // Beim Wechsel des Felds die übliche Richtung nehmen (Datum: neueste zuerst),
+      // ein erneutes Tippen auf das aktive Feld dreht die Richtung um.
+      const dir = isActive ? (State.sort.dir === 'asc' ? 'desc' : 'asc') : o.defaultDir;
+      return `<div class="sort-popover-item${isActive ? ' active' : ''}" onclick="event.stopPropagation();setMobileSort('${o.col}','${dir}')">
+        <span style="width:16px;flex-shrink:0;opacity:${isActive ? 1 : 0}">${SVG_CHECK}</span>
+        <span style="flex:1">${o.label}</span>
+        ${isActive ? `<span class="sort-popover-dir">${o[State.sort.dir]}</span>` : ''}
+      </div>`;
+    }).join('')}`;
+}
 
 function toggleMobileSortMenu(e) {
   e.stopPropagation();
@@ -397,15 +430,7 @@ function toggleMobileSortMenu(e) {
   const btn = e.currentTarget;
   const popover = document.createElement('div');
   popover.className = 'sort-popover sort-popover--mobile';
-  const SVG_CHECK = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-  popover.innerHTML = MOBILE_SORT_OPTIONS.map(o => {
-    const isActive = o.col === State.sort.col && o.dir === State.sort.dir;
-    return `<div class="sort-popover-item${isActive ? ' active' : ''}"
-      onclick="setMobileSort('${o.col}','${o.dir}')">
-      <span style="width:16px;flex-shrink:0;opacity:${isActive ? 1 : 0}">${SVG_CHECK}</span>
-      ${o.label}
-    </div>`;
-  }).join('');
+  _renderMobileSortPopover(popover);
 
   // Fixed & an <body> gehängt statt in btn.parentElement (wie beim Spalten-Popover):
   // ohne einen position:relative-Vorfahren landete das absolut positionierte Popover
@@ -443,11 +468,17 @@ function toggleMobileSortMenu(e) {
 }
 
 function setMobileSort(col, dir) {
-  State.sort = { col, dir };
+  State.sort = sanitizeTableSort({ col, dir });
   saveTableSort();
-  document.querySelectorAll('.sort-popover').forEach(p => p.remove());
   sortApps();
   renderTable();
+  // Offen lassen und nur neu zeichnen: Feld und Richtung sollen nacheinander wählbar
+  // sein, ohne das Menü zweimal öffnen zu müssen. Ein Tipp daneben schließt es.
+  // (Die Einträge stoppen dafür ihren Klick: nach dem Neuzeichnen hängt das angetippte
+  // Element nicht mehr im Popover, und der globale Handler in app.js hielte den Klick
+  // sonst für einen Klick daneben.)
+  const popover = document.querySelector('.sort-popover--mobile');
+  if (popover) _renderMobileSortPopover(popover);
 }
 
 function renderTable() {
@@ -471,9 +502,7 @@ function renderTable() {
     document.getElementById('table-body').innerHTML = '';
     const list = document.getElementById('app-list');
 
-    // Current sort label for button
-    const curSort = MOBILE_SORT_OPTIONS.find(o => o.col === State.sort.col && o.dir === State.sort.dir);
-    const sortLabel = curSort?.label || 'Sortierung';
+    const sortLabel = mobileSortLabel();
 
     const SVG_SORT = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>`;
 
