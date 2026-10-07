@@ -4287,6 +4287,25 @@ function _qrBuildSyncPayload(apps, statuses, kanbanSort, events, reminders, sett
   return { v: QR_SYNC_SCHEMA_VERSION, apps, statuses, kanbanSort, events, reminders, settings, preferences };
 }
 
+// Gelöschte Einträge bleiben 90 Tage als Tombstone im Speicher (cleanupOldTombstones),
+// damit sich die Löschung per Sync auf das andere Gerät überträgt. Dafür genügt der
+// Vermerk "diese ID ist seit X gelöscht" - mitgeschickt wurde aber bisher der komplette
+// Datensatz mit Notizen, Kontakten und Verlauf. Nach "Beispieldaten entfernen" waren das
+// 14 volle Einträge zusätzlich in jedem Sync, und gelöschte Inhalte gingen erneut über
+// den Bildschirm. Behalten wird nur, was der Empfänger braucht: Firma, weil
+// normalizeImportedApps() (auch in älteren App-Ständen) Einträge ohne Firma verwirft,
+// und Position/Status/Titel für die Ergebnisanzeige ("gelöscht: Firma - Position").
+function _qrSlimTombstone(app) {
+  if (!app?.deletedAt) return app;
+  const { id, company, position, status, createdAt, updatedAt, deletedAt } = app;
+  return { id, company, position, status, createdAt, updatedAt, deletedAt };
+}
+function _qrSlimEventTombstone(ev) {
+  if (!ev?.deletedAt) return ev;
+  const { id, appId, title, date, createdAt, updatedAt, deletedAt } = ev;
+  return { id, appId, title, date, createdAt, updatedAt, deletedAt };
+}
+
 /** Gegenstück zu _qrBuildSyncPayload(); wirft bei fremdem/kaputtem Inhalt.
  *  statuses/kanbanSort fehlen bei Codes eines noch nicht aktualisierten Geräts -
  *  dann bleibt der lokale Katalog einfach unangetastet. */
@@ -4343,10 +4362,13 @@ async function openQRSendModal() {
     idbEntries(EVENTS).catch(() => []),
     idbEntries(REMINDERS).catch(() => []),
   ]);
-  const apps      = appPairs.map(([, v]) => v);
-  const events    = eventPairs.map(([, v]) => v);
+  const apps      = appPairs.map(([, v]) => _qrSlimTombstone(v));
+  const events    = eventPairs.map(([, v]) => _qrSlimEventTombstone(v));
   const reminders = reminderPairs.map(([, v]) => v);
   if (!apps.length && !events.length) { toast('Keine Daten zum Übertragen', 'info'); return; }
+  // Gelöschte Einträge reisen nur als Lösch-Vermerk mit - gezählt wird, was der Nutzer sieht.
+  const liveApps   = apps.filter(a => !a?.deletedAt).length;
+  const liveEvents = events.filter(e => !e?.deletedAt).length;
 
   const json  = JSON.stringify(_qrBuildSyncPayload(apps, State.statuses, State.kanbanSort, events, reminders, State.settings, collectBoardPreferences()));
   const raw   = new TextEncoder().encode(json);
@@ -4362,8 +4384,8 @@ async function openQRSendModal() {
   // "Fertig"-Button ist mitgewandert.
   const typeNumber = _qrTypeNumberFor(chunks);
   _qrSend = { chunks, typeNumber, frameIndex: 0, startedAt: Date.now(), timer: null };
-  const teile = [`${apps.length} Bewerbung${apps.length === 1 ? '' : 'en'}`];
-  if (events.length) teile.push(`${events.length} Termin${events.length === 1 ? '' : 'e'}`);
+  const teile = [`${liveApps} Bewerbung${liveApps === 1 ? '' : 'en'}`];
+  if (liveEvents) teile.push(`${liveEvents} Termin${liveEvents === 1 ? '' : 'e'}`);
   document.getElementById('qr-send-count').textContent =
     `${teile.join(', ')} - ${chunks.length} Code${chunks.length === 1 ? '' : 's'}`;
   showModal('qr-send-modal');
@@ -4599,7 +4621,7 @@ async function _qrFinishScan(total) {
   // bestätigen lassen (_qrCommitScan()), bevor sich lokal überhaupt etwas ändert. Ein
   // korrekt gescannter/entschlüsselter Code allein reicht nicht als Freigabe.
   _qrStopCamera();
-  _qrScan.pending = { merged, summary, beforeApps: localApps, incoming, catalogAdds, mergedEvents, eventSummary };
+  _qrScan.pending = { merged, summary, beforeApps: localApps, beforeEvents: localEvents, incoming, catalogAdds, mergedEvents, eventSummary };
   document.getElementById('qr-scan-live').classList.add('hidden');
   document.getElementById('qr-scan-result').classList.remove('hidden');
   document.getElementById('qr-scan-cancel-btn').textContent = 'Verwerfen';
@@ -4612,7 +4634,25 @@ async function _qrFinishScan(total) {
 async function _qrCommitScan() {
   const pending = _qrScan?.pending;
   if (!pending) return;
-  const { merged, summary, beforeApps, incoming, mergedEvents } = pending;
+  const { merged, summary, beforeApps, beforeEvents, incoming, mergedEvents, eventSummary } = pending;
+  // Alles, was der Sync gleich verändert, vorher festhalten - "Rückgängig" stellt genau
+  // diesen Stand wieder her. Bisher kamen dabei nur die Bewerbungen zurück; Termine,
+  // Erinnerungen, Statuskategorien, Einstellungen und Ansicht blieben auf dem
+  // übernommenen Stand stehen.
+  const copy = (v) => JSON.parse(JSON.stringify(v ?? null));
+  const snap = {
+    merged, mergedEvents: mergedEvents || [],
+    apps:   new Map(beforeApps.map(a => [a.id, a])),
+    events: new Map((beforeEvents || []).map(e => [e.id, e])),
+    reminderIdsAdded: [],
+    statuses:   copy(State.statuses),
+    kanbanSort: copy(State.kanbanSort),
+    settings:   copy(State.settings),
+    // Nur die Ansichts-Einstellungen, die ein Sync überhaupt verändern kann - sonst
+    // würde "Rückgängig" z.B. die gerätelokalen Tabellenspalten neu schreiben.
+    prefs:      copy(collectBoardPreferences()),
+  };
+  const settingsJsonBefore = JSON.stringify([snap.statuses, snap.kanbanSort, snap.settings, snap.prefs]);
   for (const app of merged) await idbSet(app.id, app, DB);
   for (const ev of mergedEvents || []) await idbSet(ev.id, ev, EVENTS);
   // Erinnerungen tragen kein updatedAt und hängen 1:1 an einer Bewerbung. Statt zu
@@ -4621,7 +4661,10 @@ async function _qrCommitScan() {
   for (const r of incoming?.reminders || []) {
     if (!r || typeof r !== 'object' || !r.appId || !r.date) continue;
     const id = typeof r.id === 'string' && r.id ? r.id : `reminder-${r.appId}`;
-    if (!(await idbGet(id, REMINDERS))) await idbSet(id, { ...r, id }, REMINDERS);
+    if (!(await idbGet(id, REMINDERS))) {
+      await idbSet(id, { ...r, id }, REMINDERS);
+      snap.reminderIdsAdded.push(id);
+    }
   }
   await loadEvents();
   // Statuskategorien und Kanban-Reihenfolge des sendenden Geräts übernehmen, damit
@@ -4642,29 +4685,58 @@ async function _qrCommitScan() {
   document.getElementById('qr-scan-result-hint').textContent = 'Übernommen und lokal gespeichert.';
   _qrRenderResultSummary(summary, null);
 
-  const beforeMap = new Map(beforeApps.map(a => [a.id, a]));
   const parts = [];
   if (summary.added.length)   parts.push(`${summary.added.length} neu`);
   if (summary.updated.length) parts.push(`${summary.updated.length} aktualisiert`);
   if (summary.deleted.length) parts.push(`${summary.deleted.length} gelöscht`);
+  const evCount = eventSummary ? eventSummary.added.length + eventSummary.updated.length + eventSummary.deleted.length : 0;
+  if (evCount) parts.push(`${evCount} Termin${evCount === 1 ? '' : 'e'}`);
+  if (snap.reminderIdsAdded.length) parts.push(`${snap.reminderIdsAdded.length} Erinnerung${snap.reminderIdsAdded.length === 1 ? '' : 'en'}`);
+  const settingsChanged = settingsJsonBefore !== JSON.stringify(
+    [State.statuses, State.kanbanSort, State.settings, collectBoardPreferences()].map(copy));
+  if (settingsChanged) parts.push('Einstellungen');
   // Zusätzliches Sicherheitsnetz zur Vorschau: falls nach dem Übernehmen doch etwas
   // falsch aussieht, macht "Rückgängig" exakt diesen einen Sync wieder rückgängig -
   // genau der Mechanismus, den die App an anderer Stelle (z.B. Status ändern) schon nutzt.
   toast(
     parts.length ? `Sync übernommen: ${parts.join(', ')}` : 'Sync übernommen - keine Änderungen',
     'success',
-    parts.length ? { actionLabel: 'Rückgängig', onAction: () => _qrUndoSync(beforeMap, summary) } : {}
+    parts.length ? { actionLabel: 'Rückgängig', onAction: () => _qrUndoSync(snap) } : {}
   );
   _qrScan = null; // dieser Sync-Vorgang ist damit endgültig abgeschlossen
 }
 
-/** Macht genau den zuletzt über "Rückgängig" angestoßenen Sync wieder rückgängig. */
-async function _qrUndoSync(beforeMap, summary) {
-  for (const app of summary.added) await idbDel(app.id, DB);
-  for (const app of [...summary.updated, ...summary.deleted]) {
-    const prev = beforeMap.get(app.id);
-    if (prev) await idbSet(app.id, prev, DB);
-  }
+/** Macht genau den zuletzt über "Rückgängig" angestoßenen Sync wieder rückgängig -
+ *  Bewerbungen, Termine, neu hinzugekommene Erinnerungen, Statuskategorien, Kanban-
+ *  Reihenfolge, Einstellungen und Ansicht (siehe snap in _qrCommitScan()). */
+async function _qrUndoSync(snap) {
+  // Je Eintrag: gab es ihn vorher nicht -> wieder weg; hat der Sync ihn ersetzt ->
+  // alten Stand zurück. mergeApps() gibt bei "lokal gewinnt" dasselbe Objekt zurück,
+  // der Referenzvergleich trifft damit genau die Einträge, die der Sync geändert hat.
+  const restore = async (items, before, store) => {
+    for (const item of items) {
+      const prev = before.get(item.id);
+      if (!prev) await idbDel(item.id, store);
+      else if (prev !== item) await idbSet(item.id, prev, store);
+    }
+  };
+  await restore(snap.merged, snap.apps, DB);
+  await restore(snap.mergedEvents, snap.events, EVENTS);
+  for (const id of snap.reminderIdsAdded) await idbDel(id, REMINDERS);
+
+  State.statuses = snap.statuses;
+  saveStatuses(); injectStatusStyles(); renderStatusSelectOptions();
+  if (document.getElementById('page-settings')?.classList.contains('active')) renderStatusSettings();
+  State.kanbanSort = snap.kanbanSort;
+  saveKanbanSort();
+  // Ersetzen statt mergen: ein Schlüssel, den erst der Sync mitgebracht hat, muss
+  // ebenfalls wieder verschwinden.
+  State.settings = snap.settings;
+  saveSettings();
+  if (document.getElementById('page-settings')?.classList.contains('active')) renderSettingsNotifications();
+  applyViewPreferences(snap.prefs);
+
+  await loadEvents();
   await loadAll();
   toast('Sync rückgängig gemacht', 'info');
 }

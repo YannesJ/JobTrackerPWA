@@ -869,6 +869,25 @@ if (ctx) {
     assert.strictEqual(by('expectedSalary', 'asc'), 'Gamma,Beta,alpha', 'fehlendes Gehalt zählt als 0, Text wird Zahl');
   });
 
+  test('QR-Sync schickt gelöschte Einträge nur als schlanken Lösch-Vermerk', () => {
+    const full = { id: 'x1', company: 'Acme', position: 'Dev', status: 'Offen', notes: 'geheim', contactEmail: 'a@b.de',
+      history: [{ status: 'Offen', timestamp: '2026-01-01T00:00:00Z' }], createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-02-01T00:00:00Z', deletedAt: '2026-02-01T00:00:00Z' };
+    const slim = ctx._qrSlimTombstone(full);
+    assert.ok(!('notes' in slim) && !('contactEmail' in slim) && !('history' in slim), 'Inhalte fallen weg');
+    assert.strictEqual(slim.deletedAt, full.deletedAt);
+    const live = { id: 'x2', company: 'Live', notes: 'bleibt' };
+    assert.strictEqual(ctx._qrSlimTombstone(live), live, 'nicht gelöschte Einträge unverändert');
+    // Empfänger (auch älterer Stand): Firma vorhanden -> wird angenommen und setzt die Löschung durch
+    const incoming = ctx.normalizeImportedApps([slim]);
+    assert.strictEqual(incoming.length, 1);
+    const merged = ctx.mergeApps([{ ...full, deletedAt: undefined, updatedAt: '2026-01-15T00:00:00Z' }], incoming, 'newest');
+    assert.ok(merged[0].deletedAt, 'Löschung gewinnt beim Empfänger');
+    const ev = ctx._qrSlimEventTombstone({ id: 'e1', title: 'Call', date: '2026-03-01', notes: 'x', deletedAt: '2026-03-02' });
+    assert.ok(!('notes' in ev));
+    assert.strictEqual(ctx.sanitizeImportedEvents([ev]).length, 1, 'Termin-Vermerk wird angenommen');
+  });
+
   test('sanitizeTableWidths wirft unbekannte Spalten und Unsinn weg', () => {
     const out = ctx.sanitizeTableWidths({ company: '240', gibtsNicht: 300, source: 'breit', notes: 99999 });
     assert.strictEqual(out.company, 240, 'Zahl als Text wird übernommen');
