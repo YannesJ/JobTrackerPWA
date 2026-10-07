@@ -388,7 +388,9 @@ test('no em/en dashes in user-facing source files (project convention: use "-")'
   const files = ['index.html', 'app.js', 'ui.js', 'app.css', 'sw.js', 'manifest.json', 'README.md', 'THIRD-PARTY.md'];
   for (const f of files) {
     const content = fs.readFileSync(path.join(ROOT, f), 'utf8');
-    const hasDash = /[–—]/.test(content);
+    // Auch als HTML-Entity oder JS-Escape geschrieben ("&ndash;", "\u2013") - die
+    // rendert der Browser genauso als Gedankenstrich.
+    const hasDash = /[–—]|&[nm]dash;|&#821[12];|\\u201[34]/.test(content);
     assert.ok(!hasDash, `${f} contains an em or en dash (–/—) - replace with "-"`);
   }
 });

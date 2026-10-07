@@ -2585,7 +2585,7 @@ async function exportCSV() {
 }
 
 // Spalten\u00FCberschriften (Zeile 1, Gro\u00DF-/Kleinschreibung egal), die beim CSV/Excel-Import
-// erkannt werden. Nur "Firma" ist Pflicht \u2014 alle anderen Spalten sind optional und
+// erkannt werden. Nur "Firma" ist Pflicht - alle anderen Spalten sind optional und
 // unbekannte Spalten werden einfach ignoriert. Auch f\u00FCr den Info-Popover verwendet.
 const IMPORT_COL_MAP = {
   firma:'company', position:'position', status:'status', quelle:'source',
@@ -2757,7 +2757,7 @@ function toggleImportInfo(e) {
   popover.innerHTML = `
     <div class="import-info-title">Erwartetes Spaltenformat</div>
     <p>Erste Zeile = \u00DCberschriften (Gro\u00DF-/Kleinschreibung egal). Erkannt werden: ${escHtml(colLabels)}. Nur <strong>Firma*</strong> ist Pflicht, unbekannte Spalten werden ignoriert.</p>
-    <p>Alles bleibt lokal in deinem Browser \u2013 beim Import wird nichts hochgeladen oder \u00FCbertragen.</p>
+    <p>Alles bleibt lokal in deinem Browser - beim Import wird nichts hochgeladen oder \u00FCbertragen.</p>
   `;
 
   // Fixed-positioniert & an <body> geh\u00E4ngt (wie beim Status-Popover), damit es nicht
