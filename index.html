@@ -106,7 +106,6 @@
         </button>
       </div>
       <div class="sidebar-footer">
-        <span class="sidebar-version" data-app-build></span>
         <span class="sidebar-credit">Made with ❤️ in Bochum</span>
         <span class="sidebar-challenge"><a href="https://www.12challenges.de" target="_blank" rel="noopener">Bereit für die nächste Challenge</a></span>
       </div>
@@ -525,6 +524,8 @@
         <div class="page-header-left">
           <h1>Einstellungen</h1>
           <p class="page-header-subtitle">Datenverwaltung &amp; Synchronisation</p>
+          <!-- Build-Kennung (aus version.js, beim Deploy gesetzt) - zum Vergleichen, ob zwei Geräte denselben Stand laden. -->
+          <p class="settings-build" data-app-build></p>
         </div>
       </div>
 
@@ -752,16 +753,6 @@
               <p>Scannt den Code des anderen Geräts (dort zuerst "Anzeigen" antippen) und vereint Änderungen von beiden Seiten. Bei ein und demselben Eintrag bleibt die neuere Änderung erhalten, die ältere geht verloren. Du bestätigst auch hier vorher in einer Übersicht, was sich ändert.</p>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="openQRScanModal('newest')">Scannen</button>
-          </div>
-
-          <!-- Sieht auf beiden Geräten gleich aus, wenn beide denselben App-Stand laden.
-               Sonst das Gerät mit dem älteren Stand einmal neu laden. -->
-          <div class="settings-row" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border)">
-            <div class="settings-row-info">
-              <h3>App-Version auf diesem Gerät</h3>
-              <p>Sollte auf beiden Geräten gleich sein. Wenn nicht: das Gerät mit der älteren Version einmal neu laden.</p>
-            </div>
-            <span class="sidebar-version" data-app-build style="font-size:.78rem;color:var(--text-secondary);white-space:nowrap"></span>
           </div>
         </div>
       </div>

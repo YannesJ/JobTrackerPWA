@@ -5374,7 +5374,7 @@ if ('serviceWorker' in navigator) {
     localStorage.getItem('jt-job-portals') || localStorage.getItem('jt-gd-client-id')
   );
 
-  // Build-Kennung aus version.js (Sidebar + Einstellungen -> Geräte-Sync), damit man
+  // Build-Kennung aus version.js (klein oben in den Einstellungen), damit man
   // auf zwei Geräten vergleichen kann, ob beide denselben App-Stand geladen haben.
   const build = typeof APP_BUILD === 'string' ? APP_BUILD : '';
   document.querySelectorAll('[data-app-build]').forEach(el => { el.textContent = build ? `Build ${build}` : ''; });
