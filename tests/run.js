@@ -207,6 +207,7 @@ function loadAppContext() {
         parseDelimitedText, buildCsvRows, spreadsheetRowsToApplications,
         normalizeImportedApps, isSafeLinkHref,
         mergeApps, _qrSummarizeMerge, _qrChecksum, _qrBuildChunks, _qrParseChunk,
+        _qrParseFrame, _qrBuildRepairFrame, _qrCreateDecoder, _qrDecoderAdd, _qrDecoderResult, _qrSendSchedule,
         _qrBuildSyncPayload, _qrReadSyncPayload,
         _gzipBytes, _gunzipBytes })`,
     sandbox
@@ -550,6 +551,82 @@ if (ctx) {
     const corrupted = chunks[0].slice();
     corrupted[corrupted.length - 1] ^= 0xff; // letztes Payload-Byte kippen, Header/Prüfsumme bleibt
     assert.strictEqual(ctx._qrParseChunk(corrupted), null);
+  });
+
+  // ─── Fountain-Code (Zusatzcodes, Protokoll-Version 2) ──────────────────────
+  const fountainPayload = (n, seed = 7) => {
+    let s = seed; const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { s = (s * 1103515245 + 12345) >>> 0; out[i] = s >>> 24; }
+    return out;
+  };
+  const decodeFrames = (frames, total) => {
+    const dec = ctx._qrCreateDecoder(total);
+    let used = 0;
+    for (const f of frames) {
+      const parsed = ctx._qrParseFrame(f);
+      assert.ok(parsed, 'jeder Frame muss lesbar sein');
+      ctx._qrDecoderAdd(dec, parsed); used++;
+      const out = ctx._qrDecoderResult(dec);
+      if (out) return { out, used };
+    }
+    return { out: null, used };
+  };
+
+  test('Fountain: nur normale Chunks, gemischt und doppelt -> exakt die Originalbytes', () => {
+    const original = fountainPayload(2345);
+    const chunks = ctx._qrBuildChunks(original, 4711, true);
+    const order = [...chunks.keys()].reverse().flatMap(i => [i, i]); // rückwärts, jeder doppelt
+    const { out } = decodeFrames(order.map(i => chunks[i]), chunks.length);
+    assert.deepStrictEqual(Array.from(out), Array.from(original));
+  });
+
+  test('Fountain: fehlende Chunks werden durch Zusatzcodes ersetzt', () => {
+    const original = fountainPayload(4321, 3);
+    const chunks = ctx._qrBuildChunks(original, 99, true);
+    const K = chunks.length;
+    const fehlend = new Set([0, 5, 11, K - 1]); // inkl. erstem und letztem (kürzerem) Chunk
+    const frames = chunks.filter((_, i) => !fehlend.has(i));
+    for (let seed = 1; seed <= 30; seed++) frames.push(ctx._qrBuildRepairFrame(chunks, seed));
+    const { out, used } = decodeFrames(frames, K);
+    assert.deepStrictEqual(Array.from(out), Array.from(original));
+    assert.ok(used <= K + 8, `nach ${used} Frames fertig, K=${K}`);
+  });
+
+  test('Fountain: ausschließlich Zusatzcodes reichen ebenfalls', () => {
+    const original = fountainPayload(3000, 11);
+    const chunks = ctx._qrBuildChunks(original, 1234, false);
+    const frames = Array.from({ length: chunks.length + 20 }, (_, i) => ctx._qrBuildRepairFrame(chunks, i + 1));
+    const { out, used } = decodeFrames(frames, chunks.length);
+    assert.deepStrictEqual(Array.from(out), Array.from(original));
+    assert.ok(used <= chunks.length + 10, `nach ${used} Frames fertig, K=${chunks.length}`);
+  });
+
+  test('Fountain: alter Sender mit 700-Byte-Chunks wird weiterhin gelesen', () => {
+    const original = fountainPayload(2000, 5);
+    const chunks = ctx._qrBuildChunks(original, 5, true, 700);
+    const { out } = decodeFrames([chunks[2], chunks[0], chunks[1]], 3);
+    assert.deepStrictEqual(Array.from(out), Array.from(original));
+  });
+
+  test('Fountain: alter Empfänger (_qrParseChunk) verwirft Zusatzcodes still', () => {
+    const chunks = ctx._qrBuildChunks(fountainPayload(900), 42, true);
+    assert.strictEqual(ctx._qrParseChunk(ctx._qrBuildRepairFrame(chunks, 1)), null);
+    assert.strictEqual(ctx._qrBuildRepairFrame(chunks, 1).length, chunks[0].length,
+      'Zusatzcode ist so lang wie ein voller Chunk - gleiche QR-Größe');
+  });
+
+  test('Fountain: verfälschter Zusatzcode wird abgelehnt', () => {
+    const chunks = ctx._qrBuildChunks(fountainPayload(900), 42, true);
+    const bad = ctx._qrBuildRepairFrame(chunks, 3); bad[20] ^= 0xff;
+    assert.strictEqual(ctx._qrParseFrame(bad), null);
+  });
+
+  test('Fountain: Sendereihenfolge - erst jeder Chunk einmal, dann abwechselnd', () => {
+    const plan = Array.from({ length: 10 }, (_, n) => ctx._qrSendSchedule(n, 4));
+    assert.deepStrictEqual(plan.slice(0, 4).map(p => p.source), [0, 1, 2, 3]);
+    assert.ok(plan[4].source === 0 && plan[5].seed && plan[6].source === 1 && plan[7].seed);
+    assert.notStrictEqual(plan[5].seed, plan[7].seed, 'jeder Zusatzcode ist ein anderer');
+    assert.deepStrictEqual({ ...ctx._qrSendSchedule(50, 1) }, { source: 0 }, 'ein einziger Code - keine Zusatzcodes');
   });
 
   test('_qrBuildChunks: unterschiedliche Session-IDs zweier Sync-Vorgänge bleiben unterscheidbar', () => {
