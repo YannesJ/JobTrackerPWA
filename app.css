@@ -45,8 +45,12 @@
 /* ─── Theme Skins ──────────────────────────────────────────────────────────────
    A "skin" is the accent color family, independent of light/dark mode (that's
    `data-theme`). Every skin only has to define these tokens - --accent-rgb feeds
-   every rgba()-based glow/shadow below via rgb(var(--accent-rgb) / <alpha>), so
-   adding a new skin never requires touching those rules. --accent-text is a
+   every rgba()-based glow/shadow below via rgba(var(--accent-rgb), <alpha>), so
+   adding a new skin never requires touching those rules. Wichtig: --accent-rgb ist
+   kommagetrennt (auch ui.js baut daraus rgba(...) für die Charts) - die moderne
+   Schreibweise rgb(var(--accent-rgb) / <alpha>) ergibt damit "rgb(229,253,93 / .5)",
+   ungültiges CSS, und die ganze Deklaration fällt still weg. So war es lange: kein
+   Fokusring, keine aktive Sidebar-Fläche, keine Akzent-Schatten. --accent-text is a
    separately-tuned shade for when the accent is used as *text* on a light
    background, since a bright/light accent (e.g. lime) can look great as a fill
    but be nearly unreadable as foreground text - plain --accent covers fills,
@@ -60,9 +64,9 @@
      als kleine Schrift auf dem hellgrauen Seitenhintergrund die 4.5:1 erreicht. */
   --accent-text:  #637308;
   --text-on-accent: #151514;
-  --accent-faint:  rgb(var(--accent-rgb) / .16);
-  --accent-faint2: rgb(var(--accent-rgb) / .30);
-  --shadow-glow:   0 0 0 3px rgb(var(--accent-rgb) / .40);
+  --accent-faint:  rgba(var(--accent-rgb), .16);
+  --accent-faint2: rgba(var(--accent-rgb), .30);
+  --shadow-glow:   0 0 0 3px rgba(var(--accent-rgb), .40);
 }
 [data-skin="original"] {
   --accent-rgb:   99,102,241;
@@ -71,13 +75,13 @@
   --accent-dark:  #4f46e5;
   --accent-text:  #6366f1;
   --text-on-accent: #ffffff;
-  --accent-faint:  rgb(var(--accent-rgb) / .08);
-  --accent-faint2: rgb(var(--accent-rgb) / .15);
-  --shadow-glow:   0 0 0 3px rgb(var(--accent-rgb) / .18);
+  --accent-faint:  rgba(var(--accent-rgb), .08);
+  --accent-faint2: rgba(var(--accent-rgb), .15);
+  --shadow-glow:   0 0 0 3px rgba(var(--accent-rgb), .18);
 }
 [data-theme="dark"][data-skin="original"] { --accent-text: var(--accent-light); }
 [data-theme="dark"][data-skin="neon"]     { --accent-text: var(--accent-light); }
-[data-theme="dark"] { --shadow-glow: 0 0 0 3px rgb(var(--accent-rgb) / .35); }
+[data-theme="dark"] { --shadow-glow: 0 0 0 3px rgba(var(--accent-rgb), .35); }
 
 /* "Original" restores the app's pre-Neon light palette exactly (incl. the
    light sidebar) - the structural bg/border/text + dark-sidebar changes below
@@ -110,8 +114,8 @@
   --text-primary:   #0d0d14;
   --text-secondary: #5c5c7a;
   --text-muted:     #6b6b85;
-  --accent-faint:  rgb(var(--accent-rgb) / .08);
-  --accent-faint2: rgb(var(--accent-rgb) / .15);
+  --accent-faint:  rgba(var(--accent-rgb), .08);
+  --accent-faint2: rgba(var(--accent-rgb), .15);
   --accent-text:   var(--accent);
 }
 [data-theme="light"][data-skin="original"] #sidebar .sidebar-warn {
@@ -181,8 +185,8 @@
   --text-secondary: #b5b5b0;
   /* vorher #6f6f6a - nur 3.0:1 auf den dunklen Kartenflaechen */
   --text-muted:     #8d8d88;
-  --accent-faint:  rgb(var(--accent-rgb) / .16);
-  --accent-faint2: rgb(var(--accent-rgb) / .22);
+  --accent-faint:  rgba(var(--accent-rgb), .16);
+  --accent-faint2: rgba(var(--accent-rgb), .22);
   --accent-text:   var(--accent-light);
 }
 [data-theme="light"] #sidebar .sidebar-warn {
@@ -449,7 +453,7 @@ h3 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border-radius: var(--r-md);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgb(var(--accent-rgb) / .45);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), .45);
   flex-shrink: 0;
 }
 .nav-logo-text {
@@ -491,8 +495,8 @@ button.nav-item {
   border-color: var(--accent-faint2);
 }
 [data-theme="dark"] .nav-item.active {
-  background: rgb(var(--accent-rgb) / .14);
-  border-color: rgb(var(--accent-rgb) / .2);
+  background: rgba(var(--accent-rgb), .14);
+  border-color: rgba(var(--accent-rgb), .2);
   color: var(--accent-light) !important;
 }
 .nav-item .nav-count {
@@ -631,11 +635,11 @@ button.theme-toggle {
 .btn-primary {
   background: var(--accent);
   color: var(--text-on-accent);
-  box-shadow: 0 2px 8px rgb(var(--accent-rgb) / .35);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), .35);
 }
 .btn-primary:hover {
   background: var(--accent-dark);
-  box-shadow: 0 4px 16px rgb(var(--accent-rgb) / .45);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), .45);
   transform: translateY(-1px);
 }
 
@@ -733,7 +737,7 @@ button.theme-toggle {
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .35);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .35);
 }
 .form-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
@@ -1206,7 +1210,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   z-index: -1;
   border-radius: var(--r-lg);
   background: conic-gradient(from var(--qr-glow-angle, 0deg),
-    rgb(var(--accent-rgb) / .55), transparent 30%, transparent 60%, rgb(var(--accent-rgb) / .55));
+    rgba(var(--accent-rgb), .55), transparent 30%, transparent 60%, rgba(var(--accent-rgb), .55));
   filter: blur(18px);
   animation: qrGlowSpin 5s linear infinite;
 }
@@ -1238,9 +1242,7 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   height: 100%;
   width: 0%;
   border-radius: var(--r-full);
-  /* Bewusst ohne rgb(var(--accent-rgb) / x): --accent-rgb ist kommagetrennt, und
-     "rgb(229,253,93 / .7)" ist ungültiges CSS - der Balken war dadurch nie zu sehen.
-     --accent-dark vorne, damit er sich auch auf hellem Grund vom Track abhebt. */
+  /* --accent-dark vorne, damit er sich auch auf hellem Grund vom Track abhebt. */
   background: linear-gradient(90deg, var(--accent-dark), var(--accent));
   transition: width 160ms ease;
 }
@@ -1262,7 +1264,6 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .qr-scan-frame::after {
   content: '';
   position: absolute; inset: 10%;
-  /* Fester Farbwert statt rgb(var(--accent-rgb) / x) - siehe .qr-progress-bar */
   border: 2px solid var(--accent);
   border-radius: var(--r-md);
   box-shadow: 0 0 0 999px rgb(0 0 0 / .35);

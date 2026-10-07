@@ -963,7 +963,7 @@ function applyTheme(theme) {
     b.style.background    = isActive ? 'var(--accent)'      : '';
     b.style.color         = isActive ? 'var(--text-on-accent)' : '';
     b.style.borderColor   = isActive ? 'var(--accent)'      : '';
-    b.style.boxShadow     = isActive ? '0 2px 8px rgb(var(--accent-rgb)/.35)' : '';
+    b.style.boxShadow     = isActive ? '0 2px 8px rgba(var(--accent-rgb), .35)' : '';
   });
 
   // Redraw charts if dashboard visible
