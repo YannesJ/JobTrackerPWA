@@ -1415,6 +1415,18 @@ function renderDemoBanner() {
   el.classList.toggle('hidden', !(hasDemoData() && DEMO_BANNER_PAGES.includes(page)));
 }
 
+// Umzugs-Hinweis: Die App ist von GitHub Pages nach jobtracker.yann.es umgezogen. Die
+// Daten hängen am Origin und ziehen nicht von selbst mit - deshalb nur auf der alten
+// Adresse anzeigen, und nur bis Ende Oktober 2026 (danach blendet er sich selbst aus).
+// Nach dem Abschalten der alten Adresse samt Markup (index.html) und CSS entfernen.
+const MOVE_NOTICE_HOST  = 'yannesj.github.io';
+const MOVE_NOTICE_UNTIL = new Date(2026, 10, 1); // 1. November 2026, 0:00 Ortszeit
+function renderMoveBanner() {
+  const el = document.getElementById('move-banner');
+  if (!el) return;
+  el.classList.toggle('hidden', !(location.hostname === MOVE_NOTICE_HOST && new Date() < MOVE_NOTICE_UNTIL));
+}
+
 // ─── Kalender-Termine ───────────────────────────────────────────────────────────
 async function loadEvents() {
   const pairs = await idbEntries(EVENTS);
@@ -5382,6 +5394,7 @@ if ('serviceWorker' in navigator) {
   applyTheme(State.theme);
   applySkin(State.skin);
   applySalaryBlur(State.salaryBlur);
+  renderMoveBanner();
   if (localStorage.getItem('jt-sidebar-collapsed') === '1') {
     document.getElementById('app').classList.add('sidebar-collapsed');
   }

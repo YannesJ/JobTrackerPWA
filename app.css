@@ -1524,6 +1524,12 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
   .demo-banner-actions { margin-left: 0; width: 100%; }
   .demo-banner-actions .btn { flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; }
 }
+/* Umzugs-Hinweis (nur alte Adresse, siehe renderMoveBanner()): nutzt das Layout des
+   Beispieldaten-Hinweises, fällt aber stärker auf. Steht der Beispieldaten-Hinweis
+   direkt darunter, rücken beide zusammen statt den vollen Abstand zu wiederholen. */
+.move-banner { border-style: solid; border-color: var(--accent); }
+.move-banner .demo-banner-icon { color: var(--text-primary); }
+.move-banner:not(.hidden) ~ .demo-banner { margin-top: 0.75rem; }
 .page-header-left h1 { margin-bottom: 0.2rem; }
 .page-header-subtitle { font-size: 0.82rem; color: var(--text-muted); }
 
