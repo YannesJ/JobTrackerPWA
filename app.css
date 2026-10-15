@@ -1528,7 +1528,8 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
    Beispieldaten-Hinweises, fällt aber stärker auf. Steht der Beispieldaten-Hinweis
    direkt darunter, rücken beide zusammen statt den vollen Abstand zu wiederholen. */
 .move-banner { border-style: solid; border-color: var(--accent); }
-.move-banner .demo-banner-icon { color: var(--text-primary); }
+.move-banner-emoji { font-size: 1.15rem; line-height: 1; }
+.move-banner .demo-banner-text a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .move-banner:not(.hidden) ~ .demo-banner { margin-top: 0.75rem; }
 .page-header-left h1 { margin-bottom: 0.2rem; }
 .page-header-subtitle { font-size: 0.82rem; color: var(--text-muted); }
