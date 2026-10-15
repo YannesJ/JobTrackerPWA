@@ -1531,6 +1531,8 @@ td.td-mono { font-family: var(--font-mono); font-size: 0.78rem; }
 .move-banner-emoji { font-size: 1.15rem; line-height: 1; }
 .move-banner .demo-banner-text a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .move-banner:not(.hidden) ~ .demo-banner { margin-top: 0.75rem; }
+/* Sprungziel von goToBackup(): Überschrift nicht an den oberen Rand kleben. */
+#settings-backup { scroll-margin-top: max(1.5rem, env(safe-area-inset-top, 0px)); }
 .page-header-left h1 { margin-bottom: 0.2rem; }
 .page-header-subtitle { font-size: 0.82rem; color: var(--text-muted); }
 

@@ -125,10 +125,10 @@
       <div class="demo-banner-icon move-banner-emoji" aria-hidden="true">⚠️</div>
       <div class="demo-banner-text">
         <strong>JobTracker ist umgezogen: <a href="https://jobtracker.yann.es/" target="_blank" rel="noopener">jobtracker.yann.es</a></strong>
-        <span>Diese Adresse wird bald abgeschaltet. Sichere deine Daten hier per Export und lade sie dort unter Einstellungen → Offline-Backup → Importieren wieder hoch.</span>
+        <span>Diese Adresse wird bald abgeschaltet. Exportiere deine Daten hier unter Einstellungen → Offline-Backup und importiere sie dort an derselben Stelle wieder.</span>
       </div>
       <div class="demo-banner-actions">
-        <button class="btn btn-primary btn-sm" onclick="exportData()">Daten exportieren</button>
+        <button class="btn btn-primary btn-sm" onclick="goToBackup()">Zum Export</button>
         <a class="btn btn-ghost btn-sm" href="https://jobtracker.yann.es/" target="_blank" rel="noopener">Zur neuen Adresse</a>
       </div>
     </div>
@@ -575,7 +575,7 @@
         </div>
       </div>
 
-      <div class="settings-section">
+      <div id="settings-backup" class="settings-section">
         <div role="heading" aria-level="2" class="settings-section-title">Offline-Backup</div>
         <div class="card card-sm">
           <div class="backup-io-group">

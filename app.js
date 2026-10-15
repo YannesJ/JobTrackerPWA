@@ -1424,7 +1424,16 @@ const MOVE_NOTICE_UNTIL = new Date(2026, 10, 1); // 1. November 2026, 0:00 Ortsz
 function renderMoveBanner() {
   const el = document.getElementById('move-banner');
   if (!el) return;
-  el.classList.toggle('hidden', !(location.hostname === MOVE_NOTICE_HOST && new Date() < MOVE_NOTICE_UNTIL));
+  // In den Einstellungen ausgeblendet: dort steht der Export direkt darunter, der
+  // Hinweis würde ihn nur nach unten schieben.
+  const page = document.querySelector('.page.active')?.id;
+  el.classList.toggle('hidden', !(location.hostname === MOVE_NOTICE_HOST && new Date() < MOVE_NOTICE_UNTIL && page !== 'page-settings'));
+}
+// Der Hinweis exportiert nicht selbst, sondern führt zum gewohnten Export in den
+// Einstellungen - den kennen die Nutzer, und er hat sich bewährt.
+function goToBackup() {
+  navigate('settings');
+  document.getElementById('settings-backup')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ─── Kalender-Termine ───────────────────────────────────────────────────────────
@@ -1473,6 +1482,7 @@ function navigate(tab) {
   if (tab === 'settings')   { renderSettingsNotifications(); renderStatusSettings(); renderSkinButtons(); checkBackupReminder(); }
   if (tab === 'jobsearch')   _jsRestorePortalSelection();
   renderDemoBanner();
+  renderMoveBanner();
   lucide.createIcons();
 }
 
